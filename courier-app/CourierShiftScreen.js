@@ -17,7 +17,7 @@ import { TASK_NAME } from './locationTask'; // оставьте как есть
 import { WS_URL } from './constants'; // или замените на строку 'wss://...' если нет constants
 
 const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
-const TOKEN_KEY = 'token'; // JWT
+const TOKEN_KEY = 'authToken'; // JWT — теперь совпадает с LoginScreen/app.js
 
 const FOREGROUND_SERVICE = {
     notificationTitle: 'Смена активна',
@@ -62,10 +62,17 @@ export default function CourierShiftScreen({ onLogout }) {
                     try {
                         const parsed = JSON.parse(rawUnit);
                         if (parsed && (parsed.unitId || parsed.unitId === 0)) {
-                            setUnit({
+                            const normalized = {
                                 unitId: Number(parsed.unitId),
                                 unitNickname: parsed.unitNickname ?? null,
-                            });
+                            };
+                            setUnit(normalized);
+                            // Сохраняем courierId для фоновой таски (если ещё не сохранён)
+                            try {
+                                await AsyncStorage.setItem('courierId', String(normalized.unitId));
+                            } catch (e) {
+                                console.warn('Failed to set courierId in AsyncStorage', e);
+                            }
                             setLoading(false);
                             return;
                         }
@@ -87,6 +94,12 @@ export default function CourierShiftScreen({ onLogout }) {
                             try {
                                 await AsyncStorage.setItem(UNIT_KEY, JSON.stringify(normalized));
                             } catch {}
+                            // Сохраняем courierId под отдельным ключом, чтобы фоновые таски его видели
+                            try {
+                                await AsyncStorage.setItem('courierId', String(normalized.unitId));
+                            } catch (e) {
+                                console.warn('Failed to set courierId', e);
+                            }
                             setUnit(normalized);
                             setLoading(false);
                             return;
@@ -144,7 +157,6 @@ export default function CourierShiftScreen({ onLogout }) {
         ws.onmessage = (evt) => {
             try {
                 const data = JSON.parse(evt.data);
-                // handle server messages if needed
                 console.log('WS message', data);
             } catch (e) {
                 console.log('WS raw', evt.data);

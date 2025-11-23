@@ -19,7 +19,6 @@ export default function LoginScreen({ onLoginSuccess }) {
     const [loading, setLoading] = useState(false);
 
     const handleSubmit = async () => {
-        // В RN нет e.preventDefault()
         if (!login || !password) {
             Alert.alert('Ошибка', 'Пожалуйста, введите логин и пароль');
             return;
@@ -31,21 +30,18 @@ export default function LoginScreen({ onLoginSuccess }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    unit_email: login,         // используем state login
-                    unit_password: password,   // используем state password
+                    unit_email: login,
+                    unit_password: password,
                 }),
             });
 
-            // Отладка: статус и content-type
             console.log('HTTP', res.status, res.headers.get('content-type'));
 
             const contentType = res.headers.get('content-type') || '';
             let data;
             if (contentType.includes('application/json')) {
-                // безопасно парсим JSON
                 data = await res.json();
             } else {
-                // если сервер вернул HTML или текст — читаем текст и покажем в алерте
                 const text = await res.text();
                 console.warn('Non-JSON response body:', text);
                 throw new Error(`Непредвиденный ответ от сервера (status ${res.status}).`);
@@ -59,9 +55,8 @@ export default function LoginScreen({ onLoginSuccess }) {
                 if (!token) {
                     Alert.alert('Ошибка', 'Сервер не вернул токен');
                 } else {
-                    // Сохраняем токен (пример: всегда в AsyncStorage)
-                    await AsyncStorage.setItem('token', token);
-                    // Если нужна "запомнить" логика, добавьте флаг в UI и храните/не храните
+                    // Сохраняем токен под ключом authToken (согласовано с app.js)
+                    await AsyncStorage.setItem('authToken', token);
                     onLoginSuccess && onLoginSuccess();
                 }
             }

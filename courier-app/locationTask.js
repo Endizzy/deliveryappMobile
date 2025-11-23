@@ -13,9 +13,25 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
         const { locations } = data || {};
         if (!locations || locations.length === 0) return;
 
-        // Берём последний фикc
+        // Берём последний фикс
         const loc = locations[locations.length - 1];
-        const courierId = await AsyncStorage.getItem('courierId');
+
+        // Попытка получить courierId: сначала отдельный ключ, затем — объект unit
+        let courierId = await AsyncStorage.getItem('courierId');
+        if (!courierId) {
+            const rawUnit = await AsyncStorage.getItem('unit');
+            if (rawUnit) {
+                try {
+                    const parsed = JSON.parse(rawUnit);
+                    if (parsed && (parsed.unitId || parsed.unitId === 0)) {
+                        courierId = String(parsed.unitId);
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+
         const onShift = await AsyncStorage.getItem('onShift'); // "1" | null
 
         if (!courierId || onShift !== '1') return;
