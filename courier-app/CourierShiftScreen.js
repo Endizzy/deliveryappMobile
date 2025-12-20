@@ -20,7 +20,8 @@ import { WS_URL } from './constants'; // или замените на строк
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Иконки Lucide (react-native). Установи lucide-react-native если ещё не установлен.
-import { Menu as MenuIcon, List as ListIcon, User as UserIcon } from 'lucide-react-native';
+import AllOrdersScreen from './AllOrdersScreen';
+import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 
 const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
 const TOKEN_KEY = 'authToken'; // JWT — теперь совпадает с LoginScreen/app.js
@@ -63,12 +64,7 @@ export default function CourierShiftScreen({ onLogout }) {
     const insets = useSafeAreaInsets();
 
     // --- Tab state ---
-    const TABS = {
-        MENU: 'MENU',
-        ALL: 'ALL',
-        MY: 'MY',
-    };
-    const [activeTab, setActiveTab] = useState(TABS.MENU);
+    const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
 
     useEffect(() => {
         (async () => {
@@ -290,21 +286,44 @@ export default function CourierShiftScreen({ onLogout }) {
     // --- Tab content placeholders ---
     function renderTabContent() {
         switch (activeTab) {
-            case TABS.MENU:
+            case TAB_TYPES.MENU:
                 return (
-                    <View style={styles.tabContent}>
-                        <Text style={styles.tabTitle}>МЕНЮ (заглушка)</Text>
-                        <Text style={styles.tabNote}>Здесь будет список меню / навигация по функциям.</Text>
+                    <View style={styles.container}>
+                        <View style={styles.headerCard}>
+                            <View style={styles.avatarCircle}>
+                                <Text style={styles.avatarText}>{initial}</Text>
+                            </View>
+
+                            <View style={styles.infoBlock}>
+                                <Text style={styles.nickname}>{nickname}</Text>
+                                <Text style={styles.unitId}>ID: {idText}</Text>
+                            </View>
+
+                            <View style={styles.statusBlock}>
+                                <Text style={[styles.statusText, status === 'online' ? styles.online : styles.offline]}>
+                                    {status.toUpperCase()}
+                                </Text>
+                            </View>
+                        </View>
+
+                        <View style={styles.controls}>
+                            <TouchableOpacity style={styles.primaryButton} onPress={startShift}>
+                                <Text style={styles.primaryButtonText}>Начать смену</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.ghostButton} onPress={stopShift}>
+                                <Text style={styles.ghostButtonText}>Остановить</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+                                <Text style={styles.exitButtonText}>Выйти</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 );
-            case TABS.ALL:
-                return (
-                    <View style={styles.tabContent}>
-                        <Text style={styles.tabTitle}>ВСЕ (заглушка)</Text>
-                        <Text style={styles.tabNote}>Здесь будут отображаться все заказы/элементы.</Text>
-                    </View>
-                );
-            case TABS.MY:
+            case TAB_TYPES.ALL:
+                return <AllOrdersScreen useSafeArea={false} />;
+            case TAB_TYPES.MY:
                 return (
                     <View style={styles.tabContent}>
                         <Text style={styles.tabTitle}>МОИ (заглушка)</Text>
@@ -320,77 +339,11 @@ export default function CourierShiftScreen({ onLogout }) {
     const tabBarPaddingBottom = Math.max(12, insets.bottom);
 
     return (
-        <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
-            <View style={styles.container}>
-                <View style={styles.headerCard}>
-                    <View style={styles.avatarCircle}>
-                        <Text style={styles.avatarText}>{initial}</Text>
-                    </View>
-
-                    <View style={styles.infoBlock}>
-                        <Text style={styles.nickname}>{nickname}</Text>
-                        <Text style={styles.unitId}>ID: {idText}</Text>
-                    </View>
-
-                    <View style={styles.statusBlock}>
-                        <Text style={[styles.statusText, status === 'online' ? styles.online : styles.offline]}>
-                            {status.toUpperCase()}
-                        </Text>
-                    </View>
-                </View>
-
-                <View style={styles.controls}>
-                    <TouchableOpacity style={styles.primaryButton} onPress={startShift}>
-                        <Text style={styles.primaryButtonText}>Начать смену</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.ghostButton} onPress={stopShift}>
-                        <Text style={styles.ghostButtonText}>Остановить</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
-                        <Text style={styles.exitButtonText}>Выйти</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* --- Main area (tab content) --- */}
-                <View style={styles.contentArea}>
-                    {renderTabContent()}
-                </View>
+        <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
+            <View style={styles.mainContent}>
+                {renderTabContent()}
             </View>
-
-            {/* --- Bottom Tab Bar (wrap in SafeAreaView bottom via padding) --- */}
-            <View style={[styles.tabBar, { paddingBottom: tabBarPaddingBottom }]}>
-                <TouchableOpacity
-                    style={[styles.tabButton, activeTab === TABS.MENU && styles.tabButtonActive]}
-                    onPress={() => setActiveTab(TABS.MENU)}
-                    accessibilityRole="button"
-                    accessibilityLabel="МЕНЮ"
-                >
-                    <MenuIcon width={20} height={20} />
-                    <Text style={[styles.tabLabel, activeTab === TABS.MENU && styles.tabLabelActive]}>МЕНЮ</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.tabButton, activeTab === TABS.ALL && styles.tabButtonActive]}
-                    onPress={() => setActiveTab(TABS.ALL)}
-                    accessibilityRole="button"
-                    accessibilityLabel="ВСЕ"
-                >
-                    <ListIcon width={20} height={20} />
-                    <Text style={[styles.tabLabel, activeTab === TABS.ALL && styles.tabLabelActive]}>ВСЕ</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.tabButton, activeTab === TABS.MY && styles.tabButtonActive]}
-                    onPress={() => setActiveTab(TABS.MY)}
-                    accessibilityRole="button"
-                    accessibilityLabel="МОИ"
-                >
-                    <UserIcon width={20} height={20} />
-                    <Text style={[styles.tabLabel, activeTab === TABS.MY && styles.tabLabelActive]}>МОИ</Text>
-                </TouchableOpacity>
-            </View>
+            <TabNavigationBar activeTab={activeTab} onTabChange={setActiveTab} />
         </SafeAreaView>
     );
 }
@@ -398,6 +351,7 @@ export default function CourierShiftScreen({ onLogout }) {
 const styles = StyleSheet.create({
     safeContainer: { flex: 1, backgroundColor: '#f4f7fb' },
 
+    mainContent: { flex: 1, backgroundColor: '#f4f7fb', paddingBottom: 12 },
     container: { flex: 1, backgroundColor: '#f4f7fb' },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f7fb' },
 
@@ -504,4 +458,9 @@ const styles = StyleSheet.create({
     },
     tabLabel: { fontSize: 12, marginTop: 4, color: '#444' },
     tabLabelActive: { color: '#007AFF', fontWeight: '700' },
+
+    allOrdersContainer: {
+        flex: 1,
+        position: 'relative',
+    },
 });
