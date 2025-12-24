@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 // Иконки Lucide (react-native). Установи lucide-react-native если ещё не установлен.
 import AllOrdersScreen from './AllOrdersScreen';
+import OrdersListScreenModern from './OrdersListScreenModern';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 
 const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
@@ -65,6 +66,7 @@ export default function CourierShiftScreen({ onLogout }) {
 
     // --- Tab state ---
     const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
+    const [selectedOutlet, setSelectedOutlet] = useState(null); // { id, name }
 
     useEffect(() => {
         (async () => {
@@ -322,7 +324,23 @@ export default function CourierShiftScreen({ onLogout }) {
                     </View>
                 );
             case TAB_TYPES.ALL:
-                return <AllOrdersScreen useSafeArea={false} />;
+                return (
+                    <View style={{ flex: 1 }}>
+                        {!selectedOutlet ? (
+                            <AllOrdersScreen useSafeArea={false} onOpenOutlet={(o) => setSelectedOutlet(o)} />
+                        ) : (
+                            <OrdersListScreenModern
+                                useSafeArea={false}
+                                outlet={selectedOutlet}
+                                onBack={() => setSelectedOutlet(null)}
+                                onOpenOrder={(order) => {
+                                    // placeholder: if later you add order detail, handle it here
+                                    console.log('open order', order);
+                                }}
+                            />
+                        )}
+                    </View>
+                );
             case TAB_TYPES.MY:
                 return (
                     <View style={styles.tabContent}>

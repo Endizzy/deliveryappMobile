@@ -11,13 +11,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RotateCw } from 'lucide-react-native';
 
 const OUTLETS = [
-  { id: 'all', name: 'Все точки', count: 0, isAll: true },
-  { id: 'briana', name: 'Briana', count: 0 },
-  { id: 'saga', name: 'Saga', count: 0 },
-  { id: 'zepchik', name: 'Зепчик', count: 0 },
+  { id: 'all', name: 'Все точки', count: 8, isAll: true },
+  { id: 'briana', name: 'Briana', count: 2 },
+  { id: 'saga', name: 'Saga', count: 1 },
+  { id: 'zepchik', name: 'Зепчик', count: 5 },
 ];
 
-const AllOrdersScreen = ({ useSafeArea = true }) => {
+const AllOrdersScreen = ({ useSafeArea = true, onOpenOutlet }) => {
   const handleRefresh = () => {
     // TODO: запрос обновления точек
   };
@@ -26,7 +26,7 @@ const AllOrdersScreen = ({ useSafeArea = true }) => {
     <TouchableOpacity
       activeOpacity={0.8}
       style={[styles.card, item.isAll && styles.cardAll]}
-      // onPress={() => {}}
+      onPress={() => onOpenOutlet?.(item)}
     >
       <View style={styles.cardTitleWrapper}>
         <Text
@@ -61,7 +61,7 @@ const AllOrdersScreen = ({ useSafeArea = true }) => {
 
         <View style={styles.headerTitleWrapper}>
           <Text style={styles.headerTitle}>Предприятие</Text>
-          <Text style={styles.headerSubtitle}>id 6741</Text>
+          <Text style={styles.headerSubtitle}>id ???</Text>
         </View>
 
         <View style={styles.headerRightPlaceholder} />
