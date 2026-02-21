@@ -14,7 +14,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASK_NAME } from './locationTask'; // оставьте как есть
-import { WS_URL } from './constants'; // или замените на строку 'wss://...' если нет constants
+import { WS_URL, API_LOCATION } from './constants'; // или замените на строку 'wss://...' если нет constants
 
 // Safe area
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 // Иконки Lucide (react-native). Установи lucide-react-native если ещё не установлен.
 import AllOrdersScreen from './AllOrdersScreen';
 import OrdersListScreenModern from './OrdersListScreenModern';
-import OrderDetailsScreenModern from './OrderDetailsScreenModern';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 
 const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
@@ -68,7 +67,6 @@ export default function CourierShiftScreen({ onLogout }) {
     // --- Tab state ---
     const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
     const [selectedOutlet, setSelectedOutlet] = useState(null); // { id, name }
-    const [selectedOrder, setSelectedOrder] = useState(null); // заказ для детального просмотра
 
     useEffect(() => {
         (async () => {
@@ -264,6 +262,42 @@ export default function CourierShiftScreen({ onLogout }) {
 
     const stopShift = async () => {
         try {
+            // Try to fetch current position and notify server that shift stopped
+            try {
+                const courierId = unit?.unitId;
+                let pos = null;
+                try {
+                    pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                } catch (e) {
+                    // ignore - still proceed to stop
+                }
+
+                if (courierId && pos) {
+                    const body = {
+                        type: 'location',
+                        courierId: Number(courierId),
+                        lat: pos.coords.latitude,
+                        lng: pos.coords.longitude,
+                        speedKmh: typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
+                        status: 'off_shift',
+                        timestamp: new Date(pos.timestamp || Date.now()).toISOString(),
+                        courierNickname: unit?.unitNickname ?? null,
+                    };
+
+                    try {
+                        fetch(API_LOCATION, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                        }).catch(() => {});
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+            } catch (e) {
+                // non-fatal
+            }
+
             await AsyncStorage.removeItem('onShift');
             const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
             if (isRegistered) await Location.stopLocationUpdatesAsync(TASK_NAME);
@@ -330,18 +364,15 @@ export default function CourierShiftScreen({ onLogout }) {
                     <View style={{ flex: 1 }}>
                         {!selectedOutlet ? (
                             <AllOrdersScreen useSafeArea={false} onOpenOutlet={(o) => setSelectedOutlet(o)} />
-                        ) : selectedOrder ? (
-                            <OrderDetailsScreenModern
-                                order={selectedOrder}
-                                outletName={selectedOutlet?.name}
-                                onBack={() => setSelectedOrder(null)}
-                            />
                         ) : (
                             <OrdersListScreenModern
                                 useSafeArea={false}
                                 outlet={selectedOutlet}
                                 onBack={() => setSelectedOutlet(null)}
-                                onOpenOrder={(order) => setSelectedOrder(order)}
+                                onOpenOrder={(order) => {
+                                    // placeholder: if later you add order detail, handle it here
+                                    console.log('open order', order);
+                                }}
                             />
                         )}
                     </View>
