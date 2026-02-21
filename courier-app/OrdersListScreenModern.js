@@ -1,106 +1,29 @@
-import React, { useMemo } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  StatusBar,
-  Platform,
-} from 'react-native';
+import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RotateCw, ArrowDownToLine, ChevronRight, ChevronLeft } from 'lucide-react-native';
 
 /**
  * ДЕМО-ДАННЫЕ (замени на свои)
  */
-const ORDERS = [
-  {
-    id: '28',
-    number: 28,
-    time: '19:23',
-    eta: '00:39',
-    address: 'Aristida Briana iela, дом 16, квартира 5, этаж 2, код ieeja no pagalma k0ds 147',
-    outlet: 'Briana',
-  },
-  {
-    id: '10',
-    number: 10,
-    time: '19:23',
-    eta: '00:39',
-    address: 'Aristida Briana iela, дом 16, квартира 5, этаж 2, код ieeja no pagalma k0ds 147',
-    outlet: 'Briana',
-  },
-  {
-    id: '11',
-    number: 11,
-    time: '19:23',
-    eta: '00:39',
-    address: 'Aristida Briana iela, дом 16, квартира 5, этаж 2, код ieeja no pagalma k0ds 147',
-    outlet: 'Briana',
-  },
-  {
-    id: '12',
-    number: 12,
-    time: '19:23',
-    eta: '00:39',
-    address: 'Aristida Briana iela, дом 16, квартира 5, этаж 2, код ieeja no pagalma k0ds 147',
-    outlet: 'Briana',
-  },
-  {
-    id: '13',
-    number: 13,
-    time: '19:23',
-    eta: '00:39',
-    address: 'Aristida Briana iela, дом 16, квартира 5, этаж 2, код ieeja no pagalma k0ds 147',
-    outlet: 'Briana',
-  },
-  {
-    id: '30',
-    number: 30,
-    time: '19:35',
-    eta: '00:29',
-    address: 'Purvciema iela, дом 57, квартира 33, этаж 5, код 33atsleg2911',
-    outlet: 'Briana',
-  },
-  {
-    id: '31',
-    number: 31,
-    time: '19:38',
-    eta: '00:24',
-    address: 'Sliezu iela, Sarkandaugava, дом 9a, квартира 45, этаж 2, код 680',
-    outlet: 'Briana',
-  },
-  {
-    id: '16',
-    number: 16,
-    time: '19:38',
-    eta: '00:24',
-    address: 'Sliezu iela, Sarkandaugava, дом 9a, квартира 45, этаж 2, код 680',
-    outlet: 'Saga',
-  },
-  {
-    id: '17',
-    number: 17,
-    time: '19:38',
-    eta: '00:24',
-    address: 'Sliezu iela, Sarkandaugava, дом 9a, квартира 45, этаж 2, код 680',
-    outlet: 'Зепчик',
-  },
-  {
-    id: '18',
-    number: 18,
-    time: '19:38',
-    eta: '00:24',
-    address: 'Sliezu iela, Sarkandaugava, дом 9a, квартира 45, этаж 2, код 680',
-    outlet: 'Зепчик',
-  },
-];
+
+import { ORIGIN } from './constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Получение JWT токена из AsyncStorage
+async function getAuthToken() {
+  try {
+    return await AsyncStorage.getItem('authToken');
+  } catch {
+    return null;
+  }
+}
+
 
 export default function OrdersListScreenModern({
   companyTitle = 'Предприятие',
   companyId = '6741',
-  outletName = 'Briana', // fallback name
+  outletName = 'Briana',
   useSafeArea = true,
   onRefresh,
   onOpenOrder,
@@ -108,25 +31,52 @@ export default function OrdersListScreenModern({
   outlet, // { id, name }
   onBack,
 }) {
-  const data = useMemo(() => {
-    // when no outlet provided or a special "all" outlet — return all orders
-    if (!outlet || outlet.id === 'all' || !outlet.name) return ORDERS;
-    const name = String(outlet.name).toLowerCase();
-    return ORDERS.filter((o) => String(o.outlet || '').toLowerCase() === name);
-  }, [outlet]);
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const Wrapper = useSafeArea ? SafeAreaView : View;
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${ORIGIN}/api/mobile-orders`, {
+        headers: { Authorization: token ? `Bearer ${token}` : undefined },
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Ошибка загрузки заказов');
+      setOrders(data.items || []);
+    } catch (e) {
+      setError(e.message || 'Ошибка сети');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
 
   const handleRefresh = () => {
+    fetchOrders();
     onRefresh?.();
   };
+
+  // Фильтрация по outlet если нужно
+  const data = useMemo(() => {
+    if (!outlet || outlet.id === 'all' || !outlet.name) return orders;
+    const name = String(outlet.name).toLowerCase();
+    return orders.filter((o) => String(o.outlet || '').toLowerCase() === name);
+  }, [orders, outlet]);
+
+  const Wrapper = useSafeArea ? SafeAreaView : View;
 
   const renderItem = ({ item }) => {
     return (
       <TouchableOpacity
         activeOpacity={0.85}
         style={styles.card}
-        onPress={() => onOpenOrder?.(item)}
+        onPress={() => onOpenOrder?.({ id: item.id || item.order_id })}
       >
         {/* LEFT: номер */}
         <View style={styles.leftCol}>
@@ -212,13 +162,29 @@ export default function OrdersListScreenModern({
           </View>
         </View>
 
-        <FlatList
-          data={data}
-          keyExtractor={(it) => it.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
+        {loading ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 40 }}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={{ marginTop: 12, color: COLORS.muted }}>Загрузка заказов...</Text>
+          </View>
+        ) : error ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: 40 }}>
+            <Text style={{ color: 'red', fontWeight: '700' }}>{error}</Text>
+            <TouchableOpacity onPress={handleRefresh} style={{ marginTop: 16 }}>
+              <Text style={{ color: COLORS.primary, fontWeight: '700' }}>Повторить</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={data}
+            keyExtractor={(it) => String(it.id)}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshing={loading}
+            onRefresh={handleRefresh}
+          />
+        )}
       </View>
     </Wrapper>
   );
