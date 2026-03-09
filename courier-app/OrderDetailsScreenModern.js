@@ -40,6 +40,24 @@ function safeText(v, fallback = '—') {
   return s.length ? s : fallback;
 }
 
+// Форматирование даты/времени в красивый формат (например: "5 марта, 14:16")
+function formatDateTime(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '—';
+    
+    const day = date.getDate();
+    const month = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(date);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${day} ${month}, ${hours}:${minutes}`;
+  } catch {
+    return '—';
+  }
+}
+
 function formatMoney(v) {
   const n = Number(v);
   if (Number.isNaN(n)) return safeText(v);
@@ -172,8 +190,8 @@ export default function OrderDetailsScreenModern({
     o.orderNo ? String(o.orderNo) :
     o.id ? `#${o.id}` : '—';
 
-  const createdAt = safeText(o.createdAt);
-  const deliverAt = safeText(o.scheduledAt);
+  const createdAt = formatDateTime(o.createdAt);
+  const deliverAt = formatDateTime(o.scheduledAt);
 
   const customerName = safeText(o.customer);
   const phone = safeText(o.phone, '');

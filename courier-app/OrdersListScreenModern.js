@@ -3,12 +3,65 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Platform
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RotateCw, ArrowDownToLine, ChevronRight, ChevronLeft } from 'lucide-react-native';
 
-/**
- * ДЕМО-ДАННЫЕ (замени на свои)
- */
-
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Форматирование даты/времени в красивый формат (например: "5 марта, 14:16")
+function formatDateTime(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '—';
+    
+    const day = date.getDate();
+    const month = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(date);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${day} ${month}, ${hours}:${minutes}`;
+  } catch {
+    return '—';
+  }
+}
+
+// Форматирование только времени (например: "14:16")
+function formatTimeOnly(dateStr) {
+  if (!dateStr) return null;
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
+    
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${hours}:${minutes}`;
+  } catch {
+    return null;
+  }
+}
+
+// Форматирование денег
+function formatMoney(v) {
+  const n = Number(v);
+  if (isNaN(n)) return '—';
+  return n.toFixed(2);
+}
+
+// Напечатать статус красиво
+function statusLabel(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'new') return { text: 'Новый', color: '#007AFF' };
+  if (s === 'ready') return { text: 'Готов', color: '#16a34a' };
+  if (s === 'enroute') return { text: 'В пути', color: '#f59e0b' };
+  if (s === 'cancelled') return { text: 'Отменён', color: '#e11d48' };
+  return { text: String(status || '—').toUpperCase(), color: '#64748b' };
+}
+
+function safeText(v, fallback = '—') {
+  if (v === null || v === undefined) return fallback;
+  const s = String(v).trim();
+  return s.length ? s : fallback;
+}
 
 // Получение JWT токена из AsyncStorage
 async function getAuthToken() {
@@ -64,9 +117,11 @@ export default function OrdersListScreenModern({
 
   // Фильтрация по outlet если нужно
   const data = useMemo(() => {
-    if (!outlet || outlet.id === 'all' || !outlet.name) return orders;
-    const name = String(outlet.name).toLowerCase();
-    return orders.filter((o) => String(o.outlet || '').toLowerCase() === name);
+    if (!outlet || outlet.id === 'all') return orders;
+    // Используем serverName если есть, иначе name
+    const filterName = String(outlet.serverName || outlet.name || '').toLowerCase();
+    if (!filterName) return orders;
+    return orders.filter((o) => String(o.outlet || '').toLowerCase() === filterName);
   }, [orders, outlet]);
 
   const Wrapper = useSafeArea ? SafeAreaView : View;
@@ -76,24 +131,38 @@ export default function OrdersListScreenModern({
       <TouchableOpacity
         activeOpacity={0.85}
         style={styles.card}
-        onPress={() => onOpenOrder?.({ id: item.id || item.order_id })}
+        onPress={() => onOpenOrder?.({ id: item.id || item.order_id, ...item })}
       >
         {/* LEFT: номер */}
         <View style={styles.leftCol}>
           <View style={styles.orderNumPill}>
             <Text style={styles.orderNumPrefix}>№</Text>
-            <Text style={styles.orderNumText}>{item.number}</Text>
+            <Text style={styles.orderNumText}>{item.orderSeq || item.orderNo || item.id}</Text>
+          </View>
+
+          <View style={[styles.statusBadge, { backgroundColor: statusLabel(item.status).color + '20' }]}>
+            <Text style={[styles.statusBadgeText, { color: statusLabel(item.status).color }]}>
+              {statusLabel(item.status).text}
+            </Text>
           </View>
 
           <View style={styles.metaRow}>
-            <Text style={styles.metaText}>{item.time}</Text>
-            <View style={styles.metaDot} />
-            <Text style={styles.metaText}>{item.eta}</Text>
+            <Text style={styles.metaText}>{formatTimeOnly(item.createdAt) || '—'}</Text>
+            {formatTimeOnly(item.scheduledAt) && (
+              <>
+                <View style={styles.metaDot} />
+                <Text style={styles.metaText}>{formatTimeOnly(item.scheduledAt)}</Text>
+              </>
+            )}
           </View>
         </View>
 
-        {/* CENTER: адрес + точка */}
+        {/* CENTER: имя клиента + адрес + точка + цена */}
         <View style={styles.centerCol}>
+          <Text style={styles.customerText} numberOfLines={1}>
+            {item.customer || '—'}
+          </Text>
+
           <Text style={styles.address} numberOfLines={2}>
             {item.address}
           </Text>
@@ -103,7 +172,9 @@ export default function OrdersListScreenModern({
               <Text style={styles.outletChipText}>{item.outlet || outletName}</Text>
             </View>
 
-            {/* можно сюда добавить ещё метки: "срочно", "оплачен", и т.д. */}
+            <View style={styles.priceChip}>
+              <Text style={styles.priceChipText}>{formatMoney(item.amountTotal)} €</Text>
+            </View>
           </View>
         </View>
 
@@ -115,7 +186,7 @@ export default function OrdersListScreenModern({
             onPress={() => onActionPress?.(item)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {/* вариант 1: “скачать/взять” */}
+
             <ArrowDownToLine size={18} color={COLORS.primary} strokeWidth={2.2} />
           </TouchableOpacity>
 
@@ -329,6 +400,20 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
 
+  statusBadge: {
+    marginTop: 6,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
   metaRow: {
     marginTop: 10,
     flexDirection: 'row',
@@ -350,6 +435,12 @@ const styles = StyleSheet.create({
   centerCol: {
     flex: 1,
     justifyContent: 'center',
+  },
+  customerText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.primary,
+    marginBottom: 4,
   },
   address: {
     fontSize: 13,
@@ -375,6 +466,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: COLORS.muted,
+  },
+
+  priceChip: {
+    backgroundColor: '#eef6ff',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,122,255,0.18)',
+  },
+  priceChipText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: COLORS.primary,
   },
 
   rightCol: {

@@ -22,6 +22,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 // Иконки Lucide (react-native). Установи lucide-react-native если ещё не установлен.
 import AllOrdersScreen from './AllOrdersScreen';
 import OrdersListScreenModern from './OrdersListScreenModern';
+import OrderDetailsScreenModern from './OrderDetailsScreenModern';
+import MyOrdersScreen from './MyOrdersScreen';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 
 const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
@@ -67,6 +69,8 @@ export default function CourierShiftScreen({ onLogout }) {
     // --- Tab state ---
     const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
     const [selectedOutlet, setSelectedOutlet] = useState(null); // { id, name }
+    const [selectedOrder, setSelectedOrder] = useState(null); // order object
+    const [myOrders, setMyOrders] = useState([]); // orders taken by courier
 
     useEffect(() => {
         (async () => {
@@ -186,6 +190,34 @@ export default function CourierShiftScreen({ onLogout }) {
         };
     }, [unit]);
 
+    // Load my orders from AsyncStorage
+    useEffect(() => {
+        const loadMyOrders = async () => {
+            try {
+                const saved = await AsyncStorage.getItem('myOrders');
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    setMyOrders(Array.isArray(parsed) ? parsed : []);
+                }
+            } catch (e) {
+                console.warn('Failed to load myOrders', e);
+            }
+        };
+        loadMyOrders();
+    }, []); 
+
+    // Save my orders to AsyncStorage whenever they change
+    useEffect(() => {
+        const saveMyOrders = async () => {
+            try {
+                await AsyncStorage.setItem('myOrders', JSON.stringify(myOrders));
+            } catch (e) {
+                console.warn('Failed to save myOrders', e);
+            }
+        };
+        saveMyOrders();
+    }, [myOrders]);
+
     const handleExit = async () => {
         try {
             // остановка фоновой задачи (если зарегистрирована)
@@ -203,6 +235,7 @@ export default function CourierShiftScreen({ onLogout }) {
             await AsyncStorage.removeItem(TOKEN_KEY);
             await AsyncStorage.removeItem(UNIT_KEY);
             await AsyncStorage.removeItem('courierId');
+            await AsyncStorage.removeItem('myOrders');
 
             onLogout && onLogout();
         } catch (e) {
@@ -362,16 +395,45 @@ export default function CourierShiftScreen({ onLogout }) {
             case TAB_TYPES.ALL:
                 return (
                     <View style={{ flex: 1 }}>
-                        {!selectedOutlet ? (
+                        {selectedOrder ? (
+                            <OrderDetailsScreenModern
+                                order={selectedOrder}
+                                outletName={selectedOutlet?.name ?? '—'}
+                                onBack={() => setSelectedOrder(null)}
+                                onTake={(order) => {
+                                    // Check if order is already taken
+                                    const alreadyTaken = myOrders.some((o) => o.id === order.id);
+                                    if (alreadyTaken) {
+                                        Alert.alert('Внимание', 'Этот заказ уже в вашем списке');
+                                        return;
+                                    }
+                                    // Add order to myOrders with timestamp
+                                    const newOrder = {
+                                        ...order,
+                                        takenAt: new Date().toISOString(),
+                                        completed: false,
+                                    };
+                                    setMyOrders([...myOrders, newOrder]);
+                                    setSelectedOrder(null);
+                                    Alert.alert('Успешно', 'Заказ добавлен в ваши заказы');
+                                }}
+                                onCall={(phone, order) => {
+                                    console.log('call', phone, order);
+                                    // TODO: реализовать логику звонка
+                                }}
+                            />
+                        ) : !selectedOutlet ? (
                             <AllOrdersScreen useSafeArea={false} onOpenOutlet={(o) => setSelectedOutlet(o)} />
                         ) : (
                             <OrdersListScreenModern
                                 useSafeArea={false}
                                 outlet={selectedOutlet}
+                                companyId={idText}
+                                companyTitle={nickname}
+                                outletName={selectedOutlet?.name}
                                 onBack={() => setSelectedOutlet(null)}
                                 onOpenOrder={(order) => {
-                                    // placeholder: if later you add order detail, handle it here
-                                    console.log('open order', order);
+                                    setSelectedOrder(order);
                                 }}
                             />
                         )}
@@ -379,10 +441,38 @@ export default function CourierShiftScreen({ onLogout }) {
                 );
             case TAB_TYPES.MY:
                 return (
-                    <View style={styles.tabContent}>
-                        <Text style={styles.tabTitle}>МОИ (заглушка)</Text>
-                        <Text style={styles.tabNote}>Здесь будут только ваши (назначенные) заказы.</Text>
-                    </View>
+                    <MyOrdersScreen
+                        myOrders={myOrders}
+                        useSafeArea={false}
+                        onOpenOrder={(order) => {
+                            setSelectedOrder(order);
+                            // Switch to ALL tab to show order details
+                            setActiveTab(TAB_TYPES.ALL);
+                        }}
+                        onRemoveOrder={(orderId) => {
+                            Alert.alert(
+                                'Удалить заказ?',
+                                'Эту операцию нельзя отменить.',
+                                [
+                                    { text: 'Отмена', onPress: () => {} },
+                                    {
+                                        text: 'Удалить',
+                                        onPress: () => {
+                                            setMyOrders(myOrders.filter((o) => o.id !== orderId));
+                                        },
+                                        style: 'destructive',
+                                    },
+                                ]
+                            );
+                        }}
+                        onCompleteOrder={(orderId) => {
+                            setMyOrders(
+                                myOrders.map((o) =>
+                                    o.id === orderId ? { ...o, completed: true, completedAt: new Date().toISOString() } : o
+                                )
+                            );
+                        }}
+                    />
                 );
             default:
                 return null;

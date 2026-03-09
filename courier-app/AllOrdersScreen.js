@@ -12,9 +12,9 @@ import { RotateCw } from 'lucide-react-native';
 
 const OUTLETS = [
   { id: 'all', name: 'Все точки', count: 8, isAll: true },
-  { id: 'briana', name: 'Briana', count: 2 },
-  { id: 'saga', name: 'Saga', count: 1 },
-  { id: 'zepchik', name: 'Зепчик', count: 5 },
+  { id: 'briana', name: 'Briana', serverName: 'Briana', count: 2 },
+  { id: 'saga', name: 'Saga', serverName: 'Saga', count: 1 },
+  { id: 'zep', name: 'Зепчик', serverName: 'Ziepniekkalns', count: 5 },
 ];
 
 const AllOrdersScreen = ({ useSafeArea = true, onOpenOutlet }) => {
