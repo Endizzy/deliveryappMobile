@@ -25,6 +25,7 @@ import OrdersListScreenModern from './OrdersListScreenModern';
 import OrderDetailsScreenModern from './OrderDetailsScreenModern';
 import MyOrdersScreen from './MyOrdersScreen';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
+import { ORIGIN } from './constants';
 
 const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
 const TOKEN_KEY = 'authToken'; // JWT — теперь совпадает с LoginScreen/app.js
@@ -204,7 +205,35 @@ export default function CourierShiftScreen({ onLogout }) {
             }
         };
         loadMyOrders();
-    }, []); 
+    }, []);
+
+    // Fetch assigned orders from server
+    useEffect(() => {
+        if (!unit) return;
+
+        const fetchAssignedOrders = async () => {
+            try {
+                const token = await AsyncStorage.getItem(TOKEN_KEY);
+                const response = await fetch(`${ORIGIN}/api/mobile-orders?tab=my`, {
+                    headers: { Authorization: token ? `Bearer ${token}` : undefined },
+                });
+                const data = await response.json();
+                if (data.ok && Array.isArray(data.items)) {
+                    // Set server orders as source of truth
+                    setMyOrders(data.items);
+                }
+            } catch (e) {
+                console.warn('Failed to fetch assigned orders from server', e);
+            }
+        };
+
+        // Fetch on component mount
+        fetchAssignedOrders();
+
+        // Also fetch periodically (every 30 seconds)
+        const interval = setInterval(fetchAssignedOrders, 30000);
+        return () => clearInterval(interval);
+    }, [unit]); 
 
     // Save my orders to AsyncStorage whenever they change
     useEffect(() => {
@@ -407,15 +436,37 @@ export default function CourierShiftScreen({ onLogout }) {
                                         Alert.alert('Внимание', 'Этот заказ уже в вашем списке');
                                         return;
                                     }
-                                    // Add order to myOrders with timestamp
-                                    const newOrder = {
-                                        ...order,
-                                        takenAt: new Date().toISOString(),
-                                        completed: false,
-                                    };
-                                    setMyOrders([...myOrders, newOrder]);
-                                    setSelectedOrder(null);
-                                    Alert.alert('Успешно', 'Заказ добавлен в ваши заказы');
+                                    
+                                    // Assign order on server
+                                    (async () => {
+                                        try {
+                                            const token = await AsyncStorage.getItem(TOKEN_KEY);
+                                            const res = await fetch(`${ORIGIN}/api/mobile-orders/${order.id}/assign`, {
+                                                method: 'PATCH',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    Authorization: token ? `Bearer ${token}` : undefined,
+                                                },
+                                            });
+                                            const data = await res.json();
+                                            if (!data.ok) {
+                                                Alert.alert('Ошибка', data.error || 'Не удалось взять заказ');
+                                                return;
+                                            }
+                                            
+                                            // Add order to myOrders with timestamp
+                                            const newOrder = {
+                                                ...order,
+                                                takenAt: new Date().toISOString(),
+                                                completed: false,
+                                            };
+                                            setMyOrders([...myOrders, newOrder]);
+                                            setSelectedOrder(null);
+                                            Alert.alert('Успешно', 'Заказ добавлен в ваши заказы');
+                                        } catch (e) {
+                                            Alert.alert('Ошибка', e.message || 'Не удалось взять заказ');
+                                        }
+                                    })();
                                 }}
                                 onCall={(phone, order) => {
                                     console.log('call', phone, order);
@@ -452,13 +503,35 @@ export default function CourierShiftScreen({ onLogout }) {
                         onRemoveOrder={(orderId) => {
                             Alert.alert(
                                 'Удалить заказ?',
-                                'Эту операцию нельзя отменить.',
+                                'Этот заказ будет отказан и станет доступным для других курьеров.',
                                 [
                                     { text: 'Отмена', onPress: () => {} },
                                     {
                                         text: 'Удалить',
                                         onPress: () => {
-                                            setMyOrders(myOrders.filter((o) => o.id !== orderId));
+                                            // Release order on server
+                                            (async () => {
+                                                try {
+                                                    const token = await AsyncStorage.getItem(TOKEN_KEY);
+                                                    const res = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/release`, {
+                                                        method: 'PATCH',
+                                                        headers: {
+                                                            'Content-Type': 'application/json',
+                                                            Authorization: token ? `Bearer ${token}` : undefined,
+                                                        },
+                                                    });
+                                                    const data = await res.json();
+                                                    if (!data.ok) {
+                                                        Alert.alert('Ошибка', data.error || 'Не удалось отказать от заказа');
+                                                        return;
+                                                    }
+                                                    
+                                                    // Remove from local myOrders
+                                                    setMyOrders(myOrders.filter((o) => o.id !== orderId));
+                                                } catch (e) {
+                                                    Alert.alert('Ошибка', e.message || 'Не удалось отказать от заказа');
+                                                }
+                                            })();
                                         },
                                         style: 'destructive',
                                     },

@@ -93,7 +93,7 @@ export default function OrdersListScreenModern({
     setError(null);
     try {
       const token = await getAuthToken();
-      const res = await fetch(`${ORIGIN}/api/mobile-orders`, {
+      const res = await fetch(`${ORIGIN}/api/mobile-orders?tab=active`, {
         headers: { Authorization: token ? `Bearer ${token}` : undefined },
       });
       const data = await res.json();
