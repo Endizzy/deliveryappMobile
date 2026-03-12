@@ -1,4 +1,4 @@
-// courierShiftScreen.js
+// CourierShiftScreen.js
 import React, { useEffect, useRef, useState } from 'react';
 import {
     View,
@@ -8,118 +8,115 @@ import {
     Platform,
     Alert,
     ActivityIndicator,
+    Linking,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { TASK_NAME } from './locationTask'; // оставьте как есть
-import { WS_URL, API_LOCATION } from './constants'; // или замените на строку 'wss://...' если нет constants
+import { TASK_NAME } from './locationTask';
+import { WS_URL, API_LOCATION, ORIGIN } from './constants';
 
-// Safe area
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Иконки Lucide (react-native). Установи lucide-react-native если ещё не установлен.
 import AllOrdersScreen from './AllOrdersScreen';
 import OrdersListScreenModern from './OrdersListScreenModern';
 import OrderDetailsScreenModern from './OrderDetailsScreenModern';
 import MyOrdersScreen from './MyOrdersScreen';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
-import { ORIGIN } from './constants';
+import { useOrdersWebSocket } from './useOrdersWebSocket';
 
-const UNIT_KEY = 'unit';   // ожидаемый объект { unitId, unitNickname }
-const TOKEN_KEY = 'authToken'; // JWT — теперь совпадает с LoginScreen/app.js
+const UNIT_KEY  = 'unit';
+const TOKEN_KEY = 'authToken';
 
 const FOREGROUND_SERVICE = {
     notificationTitle: 'Смена активна',
-    notificationBody: 'Идёт передача геолокации для заказов.',
+    notificationBody:  'Идёт передача геолокации для заказов.',
 };
 
-// Декодируем base64url payload (JWT). Используем Buffer fallback.
 function decodeJwtPayload(token) {
     try {
         const parts = token.split('.');
         if (parts.length < 2) return null;
-        let payload = parts[1];
-        payload = payload.replace(/-/g, '+').replace(/_/g, '/');
-        const pad = payload.length % 4;
-        if (pad) payload += '='.repeat(4 - pad);
-        let jsonStr;
-        if (typeof globalThis.atob === 'function') {
-            jsonStr = globalThis.atob(payload);
-        } else if (typeof Buffer !== 'undefined') {
-            jsonStr = Buffer.from(payload, 'base64').toString('utf8');
-        } else {
-            return null;
-        }
-        return JSON.parse(jsonStr);
-    } catch (e) {
+        let p = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const pad = p.length % 4;
+        if (pad) p += '='.repeat(4 - pad);
+        const json =
+            typeof globalThis.atob === 'function'
+                ? globalThis.atob(p)
+                : Buffer.from(p, 'base64').toString('utf8');
+        return JSON.parse(json);
+    } catch {
         return null;
     }
 }
 
-export default function CourierShiftScreen({ onLogout }) {
-    const [unit, setUnit] = useState(null); // { unitId, unitNickname }
-    const [status, setStatus] = useState('offline');
-    const [loading, setLoading] = useState(true);
-    const wsRef = useRef(null);
+// Подсчитать количество заказов по каждой точке выдачи
+function getOutletCounts(orders) {
+    return orders.reduce((acc, o) => {
+        const key = (o.outlet || '').toLowerCase();
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+    }, {});
+}
 
-    // Safe area insets
+export default function CourierShiftScreen({ onLogout }) {
+    const [unit,    setUnit]    = useState(null);
+    const [status,  setStatus]  = useState('offline');
+    const [loading, setLoading] = useState(true);
+
     const insets = useSafeAreaInsets();
 
-    // --- Tab state ---
-    const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
-    const [selectedOutlet, setSelectedOutlet] = useState(null); // { id, name }
-    const [selectedOrder, setSelectedOrder] = useState(null); // order object
-    const [myOrders, setMyOrders] = useState([]); // orders taken by courier
+    // ── Tab / navigation state ──────────────────────────────────────────────
+    const [activeTab,      setActiveTab]      = useState(TAB_TYPES.MENU);
+    const [selectedOutlet, setSelectedOutlet] = useState(null);
+    const [selectedOrder,  setSelectedOrder]  = useState(null);
 
+    // ── WebSocket + заказы ──────────────────────────────────────────────────
+    const {
+        availableOrders,
+        myOrders,
+        setMyOrders,
+        connected,
+        fetchAvailable,
+        fetchMy,
+        assignOrder,
+        releaseOrder,
+    } = useOrdersWebSocket({ unit });
+
+    // ── Загрузка unit при старте ────────────────────────────────────────────
     useEffect(() => {
         (async () => {
             try {
-                // 1) Попытка получить объект unit из AsyncStorage
+                // 1) Из AsyncStorage
                 const rawUnit = await AsyncStorage.getItem(UNIT_KEY);
                 if (rawUnit) {
                     try {
                         const parsed = JSON.parse(rawUnit);
                         if (parsed && (parsed.unitId || parsed.unitId === 0)) {
                             const normalized = {
-                                unitId: Number(parsed.unitId),
+                                unitId:       Number(parsed.unitId),
                                 unitNickname: parsed.unitNickname ?? null,
                             };
                             setUnit(normalized);
-                            // Сохраняем courierId для фоновой таски (если ещё не сохранён)
-                            try {
-                                await AsyncStorage.setItem('courierId', String(normalized.unitId));
-                            } catch (e) {
-                                console.warn('Failed to set courierId in AsyncStorage', e);
-                            }
+                            await AsyncStorage.setItem('courierId', String(normalized.unitId));
                             setLoading(false);
                             return;
                         }
-                    } catch {
-                        // не JSON — игнорируем
-                    }
+                    } catch {}
                 }
 
-                // 2) Попытка извлечь из токена JWT
+                // 2) Из JWT
                 const token = await AsyncStorage.getItem(TOKEN_KEY);
                 if (token) {
                     const payload = decodeJwtPayload(token);
                     if (payload) {
-                        const unitId = payload.unitId ?? payload.userId ?? payload.unit_id ?? payload.user_id ?? null;
-                        const unitNickname = payload.unitNickname ?? payload.unit_nickname ?? payload.nickname ?? null;
+                        const unitId = payload.unitId ?? payload.userId ?? payload.unit_id ?? null;
+                        const unitNickname = payload.unitNickname ?? payload.unit_nickname ?? null;
                         if (unitId) {
                             const normalized = { unitId: Number(unitId), unitNickname: unitNickname ?? null };
-                            // Сохраняем для будущих запусков
-                            try {
-                                await AsyncStorage.setItem(UNIT_KEY, JSON.stringify(normalized));
-                            } catch {}
-                            // Сохраняем courierId под отдельным ключом, чтобы фоновые таски его видели
-                            try {
-                                await AsyncStorage.setItem('courierId', String(normalized.unitId));
-                            } catch (e) {
-                                console.warn('Failed to set courierId', e);
-                            }
+                            await AsyncStorage.setItem(UNIT_KEY,    JSON.stringify(normalized));
+                            await AsyncStorage.setItem('courierId', String(normalized.unitId));
                             setUnit(normalized);
                             setLoading(false);
                             return;
@@ -127,7 +124,6 @@ export default function CourierShiftScreen({ onLogout }) {
                     }
                 }
 
-                // 3) Ничего не найдено
                 setUnit(null);
             } catch (e) {
                 console.warn('Error loading unit', e);
@@ -138,137 +134,22 @@ export default function CourierShiftScreen({ onLogout }) {
         })();
     }, []);
 
-    useEffect(() => {
-        if (!unit) return;
-        let ws;
-        try {
-            ws = new WebSocket(WS_URL);
-        } catch (e) {
-            console.warn('WS init failed', e);
-            return;
-        }
-        wsRef.current = ws;
-
-        ws.onopen = async () => {
-            // пытаемся взять companyId из токена — если есть
-            let companyId = null;
-            try {
-                const token = await AsyncStorage.getItem(TOKEN_KEY);
-                if (token) {
-                    const payload = decodeJwtPayload(token);
-                    companyId = payload?.companyId ?? payload?.company_id ?? null;
-                }
-            } catch (e) {}
-
-            const hello = {
-                type: 'hello',
-                role: 'courier',
-                courierId: unit.unitId,
-                courierNickname: unit.unitNickname ?? null,
-                companyId,
-            };
-            try {
-                ws.send(JSON.stringify(hello));
-            } catch (e) {
-                console.warn('WS send failed', e);
-            }
-        };
-
-        ws.onmessage = (evt) => {
-            try {
-                const data = JSON.parse(evt.data);
-                console.log('WS message', data);
-            } catch (e) {
-                console.log('WS raw', evt.data);
-            }
-        };
-
-        ws.onclose = () => {};
-        ws.onerror = (e) => console.warn('WS error', e && e.message ? e.message : e);
-
-        return () => {
-            try { ws && ws.close(); } catch (e) {}
-        };
-    }, [unit]);
-
-    // Load my orders from AsyncStorage
-    useEffect(() => {
-        const loadMyOrders = async () => {
-            try {
-                const saved = await AsyncStorage.getItem('myOrders');
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    setMyOrders(Array.isArray(parsed) ? parsed : []);
-                }
-            } catch (e) {
-                console.warn('Failed to load myOrders', e);
-            }
-        };
-        loadMyOrders();
-    }, []);
-
-    // Fetch assigned orders from server
-    useEffect(() => {
-        if (!unit) return;
-
-        const fetchAssignedOrders = async () => {
-            try {
-                const token = await AsyncStorage.getItem(TOKEN_KEY);
-                const response = await fetch(`${ORIGIN}/api/mobile-orders?tab=my`, {
-                    headers: { Authorization: token ? `Bearer ${token}` : undefined },
-                });
-                const data = await response.json();
-                if (data.ok && Array.isArray(data.items)) {
-                    // Set server orders as source of truth
-                    setMyOrders(data.items);
-                }
-            } catch (e) {
-                console.warn('Failed to fetch assigned orders from server', e);
-            }
-        };
-
-        // Fetch on component mount
-        fetchAssignedOrders();
-
-        // Also fetch periodically (every 30 seconds)
-        const interval = setInterval(fetchAssignedOrders, 30000);
-        return () => clearInterval(interval);
-    }, [unit]); 
-
-    // Save my orders to AsyncStorage whenever they change
-    useEffect(() => {
-        const saveMyOrders = async () => {
-            try {
-                await AsyncStorage.setItem('myOrders', JSON.stringify(myOrders));
-            } catch (e) {
-                console.warn('Failed to save myOrders', e);
-            }
-        };
-        saveMyOrders();
-    }, [myOrders]);
-
+    // ── Выход ───────────────────────────────────────────────────────────────
     const handleExit = async () => {
         try {
-            // остановка фоновой задачи (если зарегистрирована)
             try {
                 const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
                 if (isRegistered) await Location.stopLocationUpdatesAsync(TASK_NAME);
-            } catch (e) {
-                console.warn('Stop task error', e);
-            }
+            } catch {}
 
-            // закрыть WS
-            try { wsRef.current && wsRef.current.close(); } catch (e) {}
-
-            // удалить ключи
             await AsyncStorage.removeItem(TOKEN_KEY);
             await AsyncStorage.removeItem(UNIT_KEY);
             await AsyncStorage.removeItem('courierId');
             await AsyncStorage.removeItem('myOrders');
+            await AsyncStorage.removeItem('onShift');
 
-            onLogout && onLogout();
-        } catch (e) {
-            console.error('Logout error', e);
+            onLogout?.();
+        } catch {
             Alert.alert('Ошибка', 'Не удалось выйти. Попробуйте ещё раз.');
         }
     };
@@ -289,83 +170,63 @@ export default function CourierShiftScreen({ onLogout }) {
     const startShift = async () => {
         try {
             await ensurePermissions();
-
             if (Platform.OS === 'android') {
                 await Notifications.setNotificationChannelAsync('location', {
-                    name: 'Location',
+                    name:       'Location',
                     importance: Notifications.AndroidImportance.DEFAULT,
                 });
             }
-
             await AsyncStorage.setItem('onShift', '1');
-
             const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
             if (!isRegistered) {
                 await Location.startLocationUpdatesAsync(TASK_NAME, {
-                    accuracy: Location.Accuracy.High,
-                    timeInterval: 5000,
-                    distanceInterval: 10,
-                    pausesUpdatesAutomatically: false,
+                    accuracy:                       Location.Accuracy.High,
+                    timeInterval:                   5000,
+                    distanceInterval:               10,
+                    pausesUpdatesAutomatically:     false,
                     showsBackgroundLocationIndicator: true,
                     foregroundService: {
                         notificationTitle: FOREGROUND_SERVICE.notificationTitle,
-                        notificationBody: FOREGROUND_SERVICE.notificationBody,
+                        notificationBody:  FOREGROUND_SERVICE.notificationBody,
                         notificationColor: '#000000',
                     },
                 });
             }
-
             setStatus('online');
         } catch (e) {
-            console.warn(e);
             Alert.alert('Ошибка', e.message || 'Не удалось запустить смену');
         }
     };
 
     const stopShift = async () => {
         try {
-            // Try to fetch current position and notify server that shift stopped
             try {
                 const courierId = unit?.unitId;
                 let pos = null;
-                try {
-                    pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-                } catch (e) {
-                    // ignore - still proceed to stop
-                }
+                try { pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }); } catch {}
 
                 if (courierId && pos) {
-                    const body = {
-                        type: 'location',
-                        courierId: Number(courierId),
-                        lat: pos.coords.latitude,
-                        lng: pos.coords.longitude,
-                        speedKmh: typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
-                        status: 'off_shift',
-                        timestamp: new Date(pos.timestamp || Date.now()).toISOString(),
-                        courierNickname: unit?.unitNickname ?? null,
-                    };
-
-                    try {
-                        fetch(API_LOCATION, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body),
-                        }).catch(() => {});
-                    } catch (e) {
-                        // ignore
-                    }
+                    fetch(API_LOCATION, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body:    JSON.stringify({
+                            courierId:       Number(courierId),
+                            lat:             pos.coords.latitude,
+                            lng:             pos.coords.longitude,
+                            speedKmh:        typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
+                            status:          'off_shift',
+                            timestamp:       new Date(pos.timestamp || Date.now()).toISOString(),
+                            courierNickname: unit?.unitNickname ?? null,
+                        }),
+                    }).catch(() => {});
                 }
-            } catch (e) {
-                // non-fatal
-            }
+            } catch {}
 
             await AsyncStorage.removeItem('onShift');
             const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
             if (isRegistered) await Location.stopLocationUpdatesAsync(TASK_NAME);
             setStatus('offline');
-        } catch (e) {
-            console.warn('Error stopping shift', e);
+        } catch {
             Alert.alert('Ошибка', 'Не удалось остановить смену');
         }
     };
@@ -380,12 +241,14 @@ export default function CourierShiftScreen({ onLogout }) {
     }
 
     const nickname = unit?.unitNickname ?? 'Курьер';
-    const idText = unit?.unitId ? String(unit.unitId) : '—';
-    const initial = (nickname && nickname.length > 0) ? nickname[0].toUpperCase() : '?';
+    const idText   = unit?.unitId ? String(unit.unitId) : '—';
+    const initial  = nickname.length > 0 ? nickname[0].toUpperCase() : '?';
 
-    // --- Tab content placeholders ---
+    // ── Контент вкладок ──────────────────────────────────────────────────────
     function renderTabContent() {
         switch (activeTab) {
+
+            // ─ Профиль / Смена ──────────────────────────────────────────────
             case TAB_TYPES.MENU:
                 return (
                     <View style={styles.container}>
@@ -393,12 +256,14 @@ export default function CourierShiftScreen({ onLogout }) {
                             <View style={styles.avatarCircle}>
                                 <Text style={styles.avatarText}>{initial}</Text>
                             </View>
-
                             <View style={styles.infoBlock}>
                                 <Text style={styles.nickname}>{nickname}</Text>
                                 <Text style={styles.unitId}>ID: {idText}</Text>
+                                {/* Индикатор WS-соединения */}
+                                <Text style={[styles.wsStatus, connected ? styles.wsOnline : styles.wsOffline]}>
+                                    {connected ? '● Online' : '○ Connecting...'}
+                                </Text>
                             </View>
-
                             <View style={styles.statusBlock}>
                                 <Text style={[styles.statusText, status === 'online' ? styles.online : styles.offline]}>
                                     {status.toUpperCase()}
@@ -410,17 +275,17 @@ export default function CourierShiftScreen({ onLogout }) {
                             <TouchableOpacity style={styles.primaryButton} onPress={startShift}>
                                 <Text style={styles.primaryButtonText}>Начать смену</Text>
                             </TouchableOpacity>
-
                             <TouchableOpacity style={styles.ghostButton} onPress={stopShift}>
                                 <Text style={styles.ghostButtonText}>Остановить</Text>
                             </TouchableOpacity>
-
                             <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
                                 <Text style={styles.exitButtonText}>Выйти</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 );
+
+            // ─ Все заказы ───────────────────────────────────────────────────
             case TAB_TYPES.ALL:
                 return (
                     <View style={{ flex: 1 }}>
@@ -430,66 +295,44 @@ export default function CourierShiftScreen({ onLogout }) {
                                 outletName={selectedOutlet?.name ?? '—'}
                                 onBack={() => setSelectedOrder(null)}
                                 onTake={(order) => {
-                                    // Check if order is already taken
-                                    const alreadyTaken = myOrders.some((o) => o.id === order.id);
-                                    if (alreadyTaken) {
-                                        Alert.alert('Внимание', 'Этот заказ уже в вашем списке');
-                                        return;
-                                    }
-                                    
-                                    // Assign order on server
                                     (async () => {
                                         try {
-                                            const token = await AsyncStorage.getItem(TOKEN_KEY);
-                                            const res = await fetch(`${ORIGIN}/api/mobile-orders/${order.id}/assign`, {
-                                                method: 'PATCH',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    Authorization: token ? `Bearer ${token}` : undefined,
-                                                },
-                                            });
-                                            const data = await res.json();
-                                            if (!data.ok) {
-                                                Alert.alert('Ошибка', data.error || 'Не удалось взять заказ');
-                                                return;
-                                            }
-                                            
-                                            // Add order to myOrders with timestamp
-                                            const newOrder = {
-                                                ...order,
-                                                takenAt: new Date().toISOString(),
-                                                completed: false,
-                                            };
-                                            setMyOrders([...myOrders, newOrder]);
+                                            await assignOrder(order.id);
+                                            // WS автоматически обновит availableOrders и myOrders
                                             setSelectedOrder(null);
                                             Alert.alert('Успешно', 'Заказ добавлен в ваши заказы');
                                         } catch (e) {
-                                            Alert.alert('Ошибка', e.message || 'Не удалось взять заказ');
+                                            Alert.alert('Ошибка', e.message);
                                         }
                                     })();
                                 }}
-                                onCall={(phone, order) => {
-                                    console.log('call', phone, order);
-                                    // TODO: реализовать логику звонка
+                                onCall={(phone) => {
+                                    Linking.openURL(`tel:${phone}`).catch(() => {});
                                 }}
                             />
                         ) : !selectedOutlet ? (
-                            <AllOrdersScreen useSafeArea={false} onOpenOutlet={(o) => setSelectedOutlet(o)} />
+                            <AllOrdersScreen
+                                useSafeArea={false}
+                                outletCounts={getOutletCounts(availableOrders)}
+                                onOpenOutlet={(o) => setSelectedOutlet(o)}
+                            />
                         ) : (
                             <OrdersListScreenModern
                                 useSafeArea={false}
                                 outlet={selectedOutlet}
+                                orders={availableOrders}
                                 companyId={idText}
                                 companyTitle={nickname}
                                 outletName={selectedOutlet?.name}
                                 onBack={() => setSelectedOutlet(null)}
-                                onOpenOrder={(order) => {
-                                    setSelectedOrder(order);
-                                }}
+                                onRefresh={fetchAvailable}
+                                onOpenOrder={(order) => setSelectedOrder(order)}
                             />
                         )}
                     </View>
                 );
+
+            // ─ Мои заказы ───────────────────────────────────────────────────
             case TAB_TYPES.MY:
                 return (
                     <MyOrdersScreen
@@ -497,63 +340,46 @@ export default function CourierShiftScreen({ onLogout }) {
                         useSafeArea={false}
                         onOpenOrder={(order) => {
                             setSelectedOrder(order);
-                            // Switch to ALL tab to show order details
                             setActiveTab(TAB_TYPES.ALL);
                         }}
                         onRemoveOrder={(orderId) => {
                             Alert.alert(
                                 'Удалить заказ?',
-                                'Этот заказ будет отказан и станет доступным для других курьеров.',
+                                'Заказ будет отказан и станет доступным для других курьеров.',
                                 [
-                                    { text: 'Отмена', onPress: () => {} },
+                                    { text: 'Отмена', style: 'cancel' },
                                     {
-                                        text: 'Удалить',
-                                        onPress: () => {
-                                            // Release order on server
-                                            (async () => {
-                                                try {
-                                                    const token = await AsyncStorage.getItem(TOKEN_KEY);
-                                                    const res = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/release`, {
-                                                        method: 'PATCH',
-                                                        headers: {
-                                                            'Content-Type': 'application/json',
-                                                            Authorization: token ? `Bearer ${token}` : undefined,
-                                                        },
-                                                    });
-                                                    const data = await res.json();
-                                                    if (!data.ok) {
-                                                        Alert.alert('Ошибка', data.error || 'Не удалось отказать от заказа');
-                                                        return;
-                                                    }
-                                                    
-                                                    // Remove from local myOrders
-                                                    setMyOrders(myOrders.filter((o) => o.id !== orderId));
-                                                } catch (e) {
-                                                    Alert.alert('Ошибка', e.message || 'Не удалось отказать от заказа');
-                                                }
-                                            })();
-                                        },
+                                        text:  'Удалить',
                                         style: 'destructive',
+                                        onPress: async () => {
+                                            try {
+                                                await releaseOrder(orderId);
+                                                // WS обновит myOrders и availableOrders автоматически
+                                            } catch (e) {
+                                                Alert.alert('Ошибка', e.message);
+                                            }
+                                        },
                                     },
                                 ]
                             );
                         }}
                         onCompleteOrder={(orderId) => {
-                            setMyOrders(
-                                myOrders.map((o) =>
-                                    o.id === orderId ? { ...o, completed: true, completedAt: new Date().toISOString() } : o
+                            // Локальная отметка "выполнен" (визуально)
+                            setMyOrders((prev) =>
+                                prev.map((o) =>
+                                    o.id === orderId
+                                        ? { ...o, completed: true, completedAt: new Date().toISOString() }
+                                        : o
                                 )
                             );
                         }}
                     />
                 );
+
             default:
                 return null;
         }
     }
-
-    // bottom padding to account for system navigation / gesture area
-    const tabBarPaddingBottom = Math.max(12, insets.bottom);
 
     return (
         <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
@@ -566,118 +392,72 @@ export default function CourierShiftScreen({ onLogout }) {
 }
 
 const styles = StyleSheet.create({
-    safeContainer: { flex: 1, backgroundColor: '#f4f7fb' },
-
-    mainContent: { flex: 1, backgroundColor: '#f4f7fb', paddingBottom: 12 },
-    container: { flex: 1, backgroundColor: '#f4f7fb' },
+    safeContainer:    { flex: 1, backgroundColor: '#f4f7fb' },
+    mainContent:      { flex: 1, backgroundColor: '#f4f7fb', paddingBottom: 12 },
+    container:        { flex: 1, backgroundColor: '#f4f7fb' },
     loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f7fb' },
 
     headerCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection:  'row',
+        alignItems:     'center',
         backgroundColor: '#fff',
-        marginTop: 12,
+        marginTop:      12,
         marginHorizontal: 12,
-        padding: 14,
-        borderRadius: 14,
-        shadowColor: '#000',
-        shadowOpacity: 0.03,
-        shadowOffset: { width: 0, height: 6 },
-        shadowRadius: 12,
-        elevation: 3,
+        padding:        14,
+        borderRadius:   14,
+        shadowColor:    '#000',
+        shadowOpacity:  0.03,
+        shadowOffset:   { width: 0, height: 6 },
+        shadowRadius:   12,
+        elevation:      3,
     },
     avatarCircle: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width:          56,
+        height:         56,
+        borderRadius:   28,
         backgroundColor: '#007AFF',
         justifyContent: 'center',
-        alignItems: 'center',
+        alignItems:     'center',
     },
-    avatarText: { color: '#fff', fontSize: 22, fontWeight: '700' },
+    avatarText:   { color: '#fff', fontSize: 22, fontWeight: '700' },
+    infoBlock:    { marginLeft: 12, flex: 1 },
+    nickname:     { fontSize: 18, fontWeight: '700', color: '#111' },
+    unitId:       { marginTop: 4, fontSize: 13, color: '#657786' },
+    wsStatus:     { marginTop: 4, fontSize: 11, fontWeight: '700' },
+    wsOnline:     { color: '#16a34a' },
+    wsOffline:    { color: '#f59e0b' },
 
-    infoBlock: { marginLeft: 12, flex: 1 },
-    nickname: { fontSize: 18, fontWeight: '700', color: '#111' },
-    unitId: { marginTop: 4, fontSize: 13, color: '#657786' },
+    statusBlock:  { alignItems: 'flex-end' },
+    statusText:   { fontSize: 12, fontWeight: '800' },
+    online:       { color: '#16a34a' },
+    offline:      { color: '#888' },
 
-    statusBlock: { alignItems: 'flex-end' },
-    statusText: { fontSize: 12, fontWeight: '800' },
-    online: { color: '#16a34a' },
-    offline: { color: '#888' },
-
-    controls: { marginTop: 14, marginHorizontal: 12, paddingTop: 4 },
+    controls:     { marginTop: 14, marginHorizontal: 12 },
     primaryButton: {
         backgroundColor: '#007AFF',
         paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginBottom: 10,
+        borderRadius:    12,
+        alignItems:      'center',
+        marginBottom:    10,
     },
     primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
     ghostButton: {
         backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#e6e9ee',
+        borderWidth:     1,
+        borderColor:     '#e6e9ee',
         paddingVertical: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginBottom: 10,
+        borderRadius:    12,
+        alignItems:      'center',
+        marginBottom:    10,
     },
     ghostButtonText: { color: '#333', fontSize: 16, fontWeight: '700' },
-
     exitButton: {
         paddingVertical: 10,
-        borderRadius: 12,
-        alignItems: 'center',
+        borderRadius:    12,
+        alignItems:      'center',
         backgroundColor: '#fff',
-        borderWidth: 1,
-        borderColor: '#fdecea',
+        borderWidth:     1,
+        borderColor:     '#fdecea',
     },
     exitButtonText: { color: '#c53030', fontWeight: '800' },
-
-    // content area between controls and tabbar
-    contentArea: {
-        flex: 1,
-        margin: 12,
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 12,
-        shadowColor: '#000',
-        shadowOpacity: 0.03,
-        shadowOffset: { width: 0, height: 4 },
-        shadowRadius: 8,
-        elevation: 2,
-    },
-
-    tabContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    tabTitle: { fontSize: 18, fontWeight: '700', marginBottom: 8 },
-    tabNote: { fontSize: 14, color: '#666', textAlign: 'center', paddingHorizontal: 10 },
-
-    // tab bar
-    tabBar: {
-        // height is dynamic: we keep visual height and add paddingBottom from safe area
-        backgroundColor: '#fff',
-        borderTopWidth: 1,
-        borderTopColor: '#e6e9ee',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-around',
-    },
-    tabButton: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 10,
-    },
-    tabButtonActive: {
-        backgroundColor: '#f0f6ff',
-    },
-    tabLabel: { fontSize: 12, marginTop: 4, color: '#444' },
-    tabLabelActive: { color: '#007AFF', fontWeight: '700' },
-
-    allOrdersContainer: {
-        flex: 1,
-        position: 'relative',
-    },
 });
