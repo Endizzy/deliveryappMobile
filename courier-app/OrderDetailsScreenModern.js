@@ -23,6 +23,7 @@ import {
   MapPin,
   User,
   ClipboardList,
+  Navigation,
 } from 'lucide-react-native';
 
 // Получение JWT токена из AsyncStorage
@@ -321,7 +322,19 @@ export default function OrderDetailsScreenModern({
             <View style={styles.actionIconCircle}>
               <Phone size={18} color="#fff" strokeWidth={2.2} />
             </View>
-            <Text style={styles.actionText}>ЗВОНОК</Text>
+            <Text style={styles.actionText}>Звонок</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, !canCall && styles.actionBtnDisabled]}
+            activeOpacity={0.9}
+            onPress={handleCall}
+            disabled={!canCall}
+          >
+            <View style={styles.actionIconCircle}>
+              <Navigation size={18} color="#fff" strokeWidth={2.2} />
+            </View>
+            <Text style={styles.actionText}>Waze</Text>
           </TouchableOpacity>
 
           <TouchableOpacity

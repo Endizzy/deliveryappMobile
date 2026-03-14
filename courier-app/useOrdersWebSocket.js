@@ -1,3 +1,4 @@
+// useOrdersWebSocket.js
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, ORIGIN } from './constants';
@@ -41,7 +42,7 @@ function normalizeOrder(raw) {
 
   // courierId — берём первое непустое значение из возможных вариантов
   const rawCourierId =
-    raw.courierId      != null ? raw.courierId      :
+    raw.courierId       != null ? raw.courierId       :
     raw.courier_unit_id != null ? raw.courier_unit_id :
     null;
 
@@ -55,6 +56,11 @@ function normalizeOrder(raw) {
     status === 'completed' ||
     orderType === 'completed';
 
+  // outlet — используется для фильтрации по точке в OrdersListScreenModern.
+  // currentOrdersRouter присылает это поле как pickupName (без outlet).
+  // mobileOrdersRouter присылает оба поля: outlet + pickupName.
+  const outlet = raw.outlet || raw.pickupName || '';
+
   return {
     ...raw,
     id,
@@ -62,6 +68,8 @@ function normalizeOrder(raw) {
     status,
     orderType,
     isFinished,
+    outlet,       // ← гарантируем наличие поля для фильтрации
+    pickupName: raw.pickupName || raw.outlet || '', // ← и обратно для совместимости
   };
 }
 
@@ -135,7 +143,6 @@ export function useOrdersWebSocket({ unit }) {
         // Сразу назначен мне (admin создал заказ с курьером)
         setMyOrders((prev) => mergeById(prev, [o]));
       }
-      // Назначен другому — нас не касается
       return;
     }
 

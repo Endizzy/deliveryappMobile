@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RotateCw, ArrowDownToLine, ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { RotateCw, ArrowDownToLine, ChevronRight, ChevronLeft, PlusCircle } from 'lucide-react-native';
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -162,7 +162,7 @@ export default function OrdersListScreenModern({
           onPress={() => onActionPress?.(item)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ArrowDownToLine size={18} color={COLORS.primary} strokeWidth={2.2} />
+          <PlusCircle size={18} color={COLORS.primary} strokeWidth={2.2} />
         </TouchableOpacity>
         <ChevronRight size={18} color={COLORS.muted} strokeWidth={2.2} />
       </View>
