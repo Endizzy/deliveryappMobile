@@ -1,19 +1,8 @@
-// useOrdersWebSocket.js
-// Хук управляет WebSocket-соединением и двумя списками заказов:
-//   availableOrders — свободные заказы (вкладка ALL / ACTIVE)
-//   myOrders        — заказы назначенные на текущего курьера (вкладка MY)
-//
-// Использование:
-//   const { availableOrders, myOrders, connected, assignOrder, releaseOrder } =
-//       useOrdersWebSocket({ unit });
-
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, ORIGIN } from './constants';
 
 const TOKEN_KEY = 'authToken';
-
-// ─── Утилиты ─────────────────────────────────────────────────────────────────
 
 function decodeJwtPayload(token) {
   try {
@@ -32,7 +21,6 @@ function decodeJwtPayload(token) {
   }
 }
 
-// Слить массив новых элементов в существующий по id, отсортировать по дате (новые сверху)
 function mergeById(arr, incoming) {
   const map = new Map(arr.map((o) => [o.id, o]));
   incoming.forEach((o) => map.set(o.id, o));
@@ -41,9 +29,40 @@ function mergeById(arr, incoming) {
   );
 }
 
-// Убрать элемент по id
 function removeById(arr, id) {
   return arr.filter((o) => String(o.id) !== String(id));
+}
+
+function normalizeOrder(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const id = raw.id ?? raw.order_id;
+  if (id === undefined || id === null) return null;
+
+  // courierId — берём первое непустое значение из возможных вариантов
+  const rawCourierId =
+    raw.courierId      != null ? raw.courierId      :
+    raw.courier_unit_id != null ? raw.courier_unit_id :
+    null;
+
+  const courierId = rawCourierId != null ? String(rawCourierId) : null;
+
+  const status    = raw.status    ?? '';
+  const orderType = raw.orderType ?? raw.order_type ?? 'active';
+
+  const isFinished =
+    status === 'cancelled' ||
+    status === 'completed' ||
+    orderType === 'completed';
+
+  return {
+    ...raw,
+    id,
+    courierId,
+    status,
+    orderType,
+    isFinished,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,11 +72,11 @@ export function useOrdersWebSocket({ unit }) {
   const [myOrders,        setMyOrders]        = useState([]);
   const [connected,       setConnected]       = useState(false);
 
-  const wsRef   = useRef(null);
-  const unitRef = useRef(unit);
-  unitRef.current = unit; // всегда актуальный unit без перепривязки эффектов
+  const wsRef     = useRef(null);
+  const unitRef   = useRef(unit);
+  unitRef.current = unit;
 
-  // ── REST: загрузить свободные заказы ────────────────────────────────────
+  // ── REST: загрузить свободные заказы ──────────────────────────────────
   const fetchAvailable = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem(TOKEN_KEY);
@@ -67,11 +86,11 @@ export function useOrdersWebSocket({ unit }) {
       const data = await res.json();
       if (data.ok) setAvailableOrders(data.items || []);
     } catch (e) {
-      console.warn('[useOrdersWebSocket] fetchAvailable error', e);
+      console.warn('[WS] fetchAvailable', e);
     }
   }, []);
 
-  // ── REST: загрузить мои заказы ───────────────────────────────────────────
+  // ── REST: загрузить мои заказы ─────────────────────────────────────────
   const fetchMy = useCallback(async () => {
     try {
       const token = await AsyncStorage.getItem(TOKEN_KEY);
@@ -81,75 +100,84 @@ export function useOrdersWebSocket({ unit }) {
       const data = await res.json();
       if (data.ok) setMyOrders(data.items || []);
     } catch (e) {
-      console.warn('[useOrdersWebSocket] fetchMy error', e);
+      console.warn('[WS] fetchMy', e);
     }
   }, []);
 
-  // ── Обработка входящего WS-сообщения ────────────────────────────────────
+  // ── Обработка входящего WS-сообщения ──────────────────────────────────
   const handleMessage = useCallback((msg) => {
-    const myUnitId = unitRef.current?.unitId;
 
-    // Игнорируем демо/снапшоты геолокаций
+    // Пропускаем служебные/геолокационные сообщения
     if (
-      msg.type === 'snapshot' ||
-      msg.type === 'orders_snapshot' ||
-      msg.type === 'location' ||
-      msg.type === 'remove'
+      msg.type === 'snapshot'              ||
+      msg.type === 'orders_snapshot'       ||
+      msg.type === 'location'              ||
+      msg.type === 'remove'                ||
+      msg.type === 'demo_orders_snapshot'  ||
+      msg.type === 'demo_order_created'    ||
+      msg.type === 'demo_order_updated'    ||
+      msg.type === 'demo_order_deleted'
     ) return;
 
-    // ─ Новый заказ ─────────────────────────────────────────────────────
+    const myUnitId = unitRef.current?.unitId
+      ? String(unitRef.current.unitId)
+      : null;
+
+    // ─ Новый заказ ───────────────────────────────────────────────────
     if (msg.type === 'order_created' && msg.order) {
-      const o = msg.order;
+      const o = normalizeOrder(msg.order);
+      if (!o || o.isFinished) return;
 
       if (!o.courierId) {
+        // Свободный → добавить в доступные
         setAvailableOrders((prev) => mergeById(prev, [o]));
-      } else if (myUnitId && String(o.courierId) === String(myUnitId)) {
+      } else if (myUnitId && o.courierId === myUnitId) {
+        // Сразу назначен мне (admin создал заказ с курьером)
         setMyOrders((prev) => mergeById(prev, [o]));
       }
+      // Назначен другому — нас не касается
       return;
     }
 
-    // ─ Обновление заказа ───────────────────────────────────────────────
+    // ─ Обновление заказа ─────────────────────────────────────────────
     if (msg.type === 'order_updated' && msg.order) {
-      const o         = msg.order;
-      const isMine    = myUnitId && String(o.courierId) === String(myUnitId);
-      const isFree    = !o.courierId;
-      const isFinished =
-        o.status === 'cancelled' ||
-        o.status === 'completed' ||
-        o.orderType === 'completed';
+      const o = normalizeOrder(msg.order);
+      if (!o) return;
 
-      if (isFinished) {
-        // Убрать отовсюду
+      // Завершён/отменён → убрать отовсюду
+      if (o.isFinished) {
         setAvailableOrders((prev) => removeById(prev, o.id));
         setMyOrders        ((prev) => removeById(prev, o.id));
         return;
       }
 
+      const isMine = myUnitId && o.courierId === myUnitId;
+      const isFree = !o.courierId;
+
       if (isMine) {
-        // Добавить/обновить в My, убрать из Available
+        // Назначен мне → добавить/обновить в My, убрать из Available
         setMyOrders        ((prev) => mergeById(prev, [o]));
         setAvailableOrders ((prev) => removeById(prev, o.id));
       } else if (isFree) {
-        // Заказ освободился (отказ) -> в Available, убрать из My
+        // Освободился → добавить в Available, убрать из My
         setAvailableOrders ((prev) => mergeById(prev, [o]));
         setMyOrders        ((prev) => removeById(prev, o.id));
       } else {
-        // Взял другой курьер -> убрать из Available
+        // Взят другим курьером → убрать из обоих
         setAvailableOrders ((prev) => removeById(prev, o.id));
         setMyOrders        ((prev) => removeById(prev, o.id));
       }
       return;
     }
 
-    // ─ Удаление заказа ─────────────────────────────────────────────────
+    // ─ Удаление заказа ───────────────────────────────────────────────
     if (msg.type === 'order_deleted' && msg.orderId) {
       setAvailableOrders ((prev) => removeById(prev, msg.orderId));
       setMyOrders        ((prev) => removeById(prev, msg.orderId));
     }
   }, []);
 
-  // ── WebSocket: подключение с авто-реконнектом ────────────────────────────
+  // ── WebSocket: подключение с авто-реконнектом ──────────────────────
   useEffect(() => {
     if (!unit) return;
 
@@ -159,7 +187,7 @@ export function useOrdersWebSocket({ unit }) {
 
     const connect = async () => {
       try {
-        const token     = await AsyncStorage.getItem(TOKEN_KEY);
+        const token      = await AsyncStorage.getItem(TOKEN_KEY);
         const jwtPayload = token ? decodeJwtPayload(token) : null;
         const companyId  = jwtPayload?.companyId ?? jwtPayload?.company_id ?? null;
 
@@ -168,15 +196,13 @@ export function useOrdersWebSocket({ unit }) {
 
         ws.onopen = () => {
           setConnected(true);
-          ws.send(
-            JSON.stringify({
-              type:            'hello',
-              role:            'courier',
-              courierId:       unit.unitId,
-              courierNickname: unit.unitNickname ?? null,
-              companyId,
-            })
-          );
+          ws.send(JSON.stringify({
+            type:            'hello',
+            role:            'courier',
+            courierId:       unit.unitId,
+            courierNickname: unit.unitNickname ?? null,
+            companyId,
+          }));
         };
 
         ws.onmessage = (evt) => {
@@ -188,23 +214,20 @@ export function useOrdersWebSocket({ unit }) {
 
         ws.onclose = () => {
           setConnected(false);
-          if (!destroyed) {
-            reconnectTimer = setTimeout(connect, 2000);
-          }
+          if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
         };
 
         ws.onerror = (e) => {
-          console.warn('[useOrdersWebSocket] WS error', e?.message ?? e);
+          console.warn('[WS] error', e?.message ?? e);
           try { ws.close(); } catch {}
         };
       } catch (e) {
-        console.warn('[useOrdersWebSocket] connect error', e);
+        console.warn('[WS] connect error', e);
         if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
       }
     };
 
     connect();
-
     fetchAvailable();
     fetchMy();
 
@@ -215,7 +238,7 @@ export function useOrdersWebSocket({ unit }) {
     };
   }, [unit, handleMessage, fetchAvailable, fetchMy]);
 
-  // ── Взять заказ ─────────────────────────────────────────────────────────
+  // ── Взять заказ ────────────────────────────────────────────────────
   const assignOrder = useCallback(async (orderId) => {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
     const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/assign`, {
@@ -230,7 +253,7 @@ export function useOrdersWebSocket({ unit }) {
     return data;
   }, []);
 
-  // ── Отказаться от заказа ────────────────────────────────────────────────
+  // ── Отказаться от заказа ───────────────────────────────────────────
   const releaseOrder = useCallback(async (orderId) => {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
     const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/release`, {
@@ -246,13 +269,13 @@ export function useOrdersWebSocket({ unit }) {
   }, []);
 
   return {
-    availableOrders,  // свободные заказы для вкладки ALL
-    myOrders,         // MY orders
-    setMyOrders,      // для ручного управления (например, отметить выполненным)
-    connected,        // true если WS соединение активно, proverka
-    fetchAvailable,   // принудительно перезагрузить свободные
-    fetchMy,          // принудительно перезагрузить мои
-    assignOrder,      // (orderId) => Promise — взять заказ
-    releaseOrder,     // (orderId) => Promise — отказаться от заказа
+    availableOrders,
+    myOrders,
+    setMyOrders,
+    connected,
+    fetchAvailable,
+    fetchMy,
+    assignOrder,
+    releaseOrder,
   };
 }
