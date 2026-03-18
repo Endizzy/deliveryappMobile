@@ -7,27 +7,23 @@ import {
   FlatList,
   TouchableOpacity,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RotateCw } from 'lucide-react-native';
 
 // Список точек выдачи — serverName должен совпадать со значением поля outlet в заказе
 const OUTLETS = [
-  { id: 'all',    name: 'Все точки',  serverName: null,              isAll: true },
-  { id: 'briana', name: 'Briana',     serverName: 'Briana'                       },
-  { id: 'saga',   name: 'Saga',       serverName: 'Saga'                         },
-  { id: 'zep',    name: 'Зепчик',     serverName: 'Ziepniekkalns'                },
+  { id: 'all', name: 'Все точки', serverName: null, isAll: true },
+  { id: 'briana', name: 'Briana', serverName: 'Briana' },
+  { id: 'saga', name: 'Saga', serverName: 'Saga' },
+  { id: 'zep', name: 'Зепчик', serverName: 'Ziepniekkalns' },
 ];
 
-// outletCounts — объект { 'briana': 2, 'saga': 1, ... }
-// Ключи должны быть в нижнем регистре (serverName.toLowerCase())
 const AllOrdersScreen = ({
-  useSafeArea   = true,
+  useSafeArea = true,
   onOpenOutlet,
-  outletCounts  = {},  // << динамические счётчики из useOrdersWebSocket
+  outletCounts = {},
 }) => {
-
-  // Считаем badge для каждой точки
   const getCount = (item) => {
     if (item.isAll) {
       return Object.values(outletCounts).reduce((sum, v) => sum + v, 0);
@@ -38,29 +34,45 @@ const AllOrdersScreen = ({
 
   const renderItem = ({ item }) => {
     const count = getCount(item);
+    const isActive = count > 0;
 
     return (
       <TouchableOpacity
-        activeOpacity={0.8}
-        style={[styles.card, item.isAll && styles.cardAll]}
+        activeOpacity={0.85}
+        style={[
+          styles.card,
+          item.isAll && styles.cardAll,
+          isActive && styles.cardWithOrders,
+        ]}
         onPress={() => onOpenOutlet?.(item)}
       >
-        <View style={styles.cardTitleWrapper}>
-          <Text
-            style={[styles.cardTitle, item.isAll && styles.cardTitleAll]}
-            numberOfLines={1}
-          >
-            {item.name}
-          </Text>
-          {item.isAll && (
-            <Text style={styles.cardSubtitle}>Все активные точки</Text>
-          )}
-        </View>
+        <View style={styles.cardMain}>
+          <View style={styles.cardTitleWrapper}>
+            <View style={styles.titleRow}>
+              <Text
+                style={[styles.cardTitle, item.isAll && styles.cardTitleAll]}
+                numberOfLines={1}
+              >
+                {item.name}
+              </Text>
 
-        <View style={[styles.badge, count > 0 && styles.badgeActive]}>
-          <Text style={[styles.badgeText, count > 0 && styles.badgeTextActive]}>
-            {count}
-          </Text>
+              {item.isAll && (
+                <View style={styles.allPill}>
+                  <Text style={styles.allPillText}>ВСЕ</Text>
+                </View>
+              )}
+            </View>
+
+            <Text style={styles.cardSubtitle}>
+              {item.isAll ? 'Все активные точки выдачи' : 'Открыть список заказов точки'}
+            </Text>
+          </View>
+
+          <View style={[styles.badge, isActive && styles.badgeActive]}>
+            <Text style={[styles.badgeText, isActive && styles.badgeTextActive]}>
+              {count}
+            </Text>
+          </View>
         </View>
       </TouchableOpacity>
     );
@@ -68,21 +80,16 @@ const AllOrdersScreen = ({
 
   const content = (
     <>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#010B13" />
 
-      {/* ШАПКА */}
+      {/* <View style={styles.bgCircleTop} pointerEvents="none" />
+      <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
+
       <View style={styles.header}>
-        <View style={styles.iconButton} />
-
-        <View style={styles.headerTitleWrapper}>
-          <Text style={styles.headerTitle}>Заказы</Text>
-          <Text style={styles.headerSubtitle}>Выберите точку выдачи</Text>
-        </View>
-
-        <View style={styles.headerRightPlaceholder} />
+        <Text style={styles.headerTitle}>ЗАКАЗЫ</Text>
+        <Text style={styles.headerSubtitle}>Выберите точку выдачи</Text>
       </View>
 
-      {/* СПИСОК ТОЧЕК */}
       <View style={styles.content}>
         <FlatList
           data={OUTLETS}
@@ -108,110 +115,183 @@ const AllOrdersScreen = ({
 
 export default AllOrdersScreen;
 
-const PRIMARY    = '#00B4D8';
-const BACKGROUND = '#F4F6F8';
+const COLORS = {
+  primary: '#2F8CFF',
+  bg: '#010B13',
+  card: '#0B1722',
+  cardAlt: '#0F2232',
+  text: '#FFFFFF',
+  muted: '#8FA3B8',
+  line: 'rgba(255,255,255,0.08)',
+  softBlue: 'rgba(47, 140, 255, 0.12)',
+  softBlueStrong: 'rgba(47, 140, 255, 0.18)',
+};
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex:            1,
-    backgroundColor: PRIMARY,
+    flex: 1,
+    backgroundColor: COLORS.bg,
   },
+
+  bgCircleTop: {
+    position: 'absolute',
+    top: -80,
+    right: -60,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(0, 122, 255, 0.12)',
+    zIndex: 0,
+  },
+
+  bgCircleBottom: {
+    position: 'absolute',
+    bottom: -100,
+    left: -80,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(0, 180, 255, 0.08)',
+    zIndex: 0,
+  },
+
   header: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    paddingHorizontal: 20,
-    paddingBottom:   16,
-    paddingTop:      8,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    backgroundColor: 'transparent',
+    zIndex: 2,
   },
-  iconButton: {
-    width:           36,
-    height:          36,
-    borderRadius:    18,
-    justifyContent:  'center',
-    alignItems:      'center',
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  headerTitleWrapper: {
-    flex:       1,
-    alignItems: 'center',
-  },
+
   headerTitle: {
-    color:      '#FFFFFF',
-    fontSize:   18,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    color: COLORS.text,
+  },
+
+  headerSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.muted,
+  },
+
+  content: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+
+  listContent: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 24,
+  },
+
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    marginBottom: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 22,
+    elevation: 10,
+  },
+
+  cardAll: {
+    backgroundColor: COLORS.cardAlt,
+    borderColor: 'rgba(47, 140, 255, 0.16)',
+  },
+
+  cardWithOrders: {
+    borderColor: 'rgba(47, 140, 255, 0.18)',
+  },
+
+  cardMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+
+  cardTitleWrapper: {
+    flex: 1,
+    paddingRight: 12,
+  },
+
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  cardTitle: {
+    fontSize: 17,
+    color: COLORS.text,
     fontWeight: '700',
   },
-  headerSubtitle: {
-    color:     'rgba(255,255,255,0.8)',
-    fontSize:  12,
-    marginTop: 2,
-  },
-  headerRightPlaceholder: {
-    width:  36,
-    height: 36,
-  },
-  content: {
-    flex:                1,
-    backgroundColor:     BACKGROUND,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop:          16,
-  },
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom:     24,
-  },
-  card: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius:    18,
-    backgroundColor: '#FFFFFF',
-    marginBottom:    12,
-    elevation:       2,
-    shadowColor:     '#000',
-    shadowOpacity:   0.06,
-    shadowOffset:    { width: 0, height: 2 },
-    shadowRadius:    6,
-  },
-  cardAll: {
-    backgroundColor: '#E0F7FF',
-  },
-  cardTitleWrapper: { flex: 1 },
-  cardTitle: {
-    fontSize:   16,
-    color:      '#1E293B',
-    fontWeight: '500',
-  },
+
   cardTitleAll: {
-    fontWeight:    '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
+
   cardSubtitle: {
-    fontSize:  11,
-    color:     '#64748B',
-    marginTop: 3,
+    fontSize: 12,
+    color: COLORS.muted,
+    marginTop: 6,
+    lineHeight: 18,
   },
+
+  allPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: 'rgba(47, 140, 255, 0.18)',
+  },
+
+  allPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.primary,
+    letterSpacing: 0.4,
+  },
+
   badge: {
-    minWidth:        32,
+    minWidth: 40,
+    height: 40,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius:    999,
-    borderWidth:     1,
-    borderColor:     PRIMARY,
-    alignItems:      'center',
-    justifyContent:  'center',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+
   badgeActive: {
-    backgroundColor: PRIMARY,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+    shadowColor: COLORS.primary,
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 6,
   },
+
   badgeText: {
-    fontSize:   14,
-    fontWeight: '600',
-    color:      PRIMARY,
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.muted,
   },
+
   badgeTextActive: {
-    color: '#fff',
+    color: '#FFFFFF',
   },
 });

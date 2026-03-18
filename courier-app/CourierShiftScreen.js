@@ -1,5 +1,5 @@
 // CourierShiftScreen.js
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -9,15 +9,16 @@ import {
     Alert,
     ActivityIndicator,
     Linking,
+    StatusBar,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASK_NAME } from './locationTask';
-import { WS_URL, API_LOCATION, ORIGIN } from './constants';
+import { API_LOCATION } from './constants';
 
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import AllOrdersScreen from './AllOrdersScreen';
 import OrdersListScreenModern from './OrdersListScreenModern';
@@ -26,12 +27,12 @@ import MyOrdersScreen from './MyOrdersScreen';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 import { useOrdersWebSocket } from './useOrdersWebSocket';
 
-const UNIT_KEY  = 'unit';
+const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
 
 const FOREGROUND_SERVICE = {
     notificationTitle: 'Смена активна',
-    notificationBody:  'Идёт передача геолокации для заказов.',
+    notificationBody: 'Идёт передача геолокации для заказов.',
 };
 
 function decodeJwtPayload(token) {
@@ -61,16 +62,14 @@ function getOutletCounts(orders) {
 }
 
 export default function CourierShiftScreen({ onLogout }) {
-    const [unit,    setUnit]    = useState(null);
-    const [status,  setStatus]  = useState('offline');
+    const [unit, setUnit] = useState(null);
+    const [status, setStatus] = useState('offline');
     const [loading, setLoading] = useState(true);
 
-    const insets = useSafeAreaInsets();
-
     // ── Tab / navigation state ──────────────────────────────────────────────
-    const [activeTab,      setActiveTab]      = useState(TAB_TYPES.MENU);
+    const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
     const [selectedOutlet, setSelectedOutlet] = useState(null);
-    const [selectedOrder,  setSelectedOrder]  = useState(null);
+    const [selectedOrder, setSelectedOrder] = useState(null);
 
     // ── WebSocket + заказы ──────────────────────────────────────────────────
     const {
@@ -88,14 +87,13 @@ export default function CourierShiftScreen({ onLogout }) {
     useEffect(() => {
         (async () => {
             try {
-                // 1) Из AsyncStorage
                 const rawUnit = await AsyncStorage.getItem(UNIT_KEY);
                 if (rawUnit) {
                     try {
                         const parsed = JSON.parse(rawUnit);
                         if (parsed && (parsed.unitId || parsed.unitId === 0)) {
                             const normalized = {
-                                unitId:       Number(parsed.unitId),
+                                unitId: Number(parsed.unitId),
                                 unitNickname: parsed.unitNickname ?? null,
                             };
                             setUnit(normalized);
@@ -103,10 +101,9 @@ export default function CourierShiftScreen({ onLogout }) {
                             setLoading(false);
                             return;
                         }
-                    } catch {}
+                    } catch { }
                 }
 
-                // 2) Из JWT
                 const token = await AsyncStorage.getItem(TOKEN_KEY);
                 if (token) {
                     const payload = decodeJwtPayload(token);
@@ -114,8 +111,11 @@ export default function CourierShiftScreen({ onLogout }) {
                         const unitId = payload.unitId ?? payload.userId ?? payload.unit_id ?? null;
                         const unitNickname = payload.unitNickname ?? payload.unit_nickname ?? null;
                         if (unitId) {
-                            const normalized = { unitId: Number(unitId), unitNickname: unitNickname ?? null };
-                            await AsyncStorage.setItem(UNIT_KEY,    JSON.stringify(normalized));
+                            const normalized = {
+                                unitId: Number(unitId),
+                                unitNickname: unitNickname ?? null,
+                            };
+                            await AsyncStorage.setItem(UNIT_KEY, JSON.stringify(normalized));
                             await AsyncStorage.setItem('courierId', String(normalized.unitId));
                             setUnit(normalized);
                             setLoading(false);
@@ -140,7 +140,7 @@ export default function CourierShiftScreen({ onLogout }) {
             try {
                 const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
                 if (isRegistered) await Location.stopLocationUpdatesAsync(TASK_NAME);
-            } catch {}
+            } catch { }
 
             await AsyncStorage.removeItem(TOKEN_KEY);
             await AsyncStorage.removeItem(UNIT_KEY);
@@ -172,7 +172,7 @@ export default function CourierShiftScreen({ onLogout }) {
             await ensurePermissions();
             if (Platform.OS === 'android') {
                 await Notifications.setNotificationChannelAsync('location', {
-                    name:       'Location',
+                    name: 'Location',
                     importance: Notifications.AndroidImportance.DEFAULT,
                 });
             }
@@ -180,14 +180,14 @@ export default function CourierShiftScreen({ onLogout }) {
             const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
             if (!isRegistered) {
                 await Location.startLocationUpdatesAsync(TASK_NAME, {
-                    accuracy:                       Location.Accuracy.High,
-                    timeInterval:                   5000,
-                    distanceInterval:               10,
-                    pausesUpdatesAutomatically:     false,
+                    accuracy: Location.Accuracy.High,
+                    timeInterval: 5000,
+                    distanceInterval: 10,
+                    pausesUpdatesAutomatically: false,
                     showsBackgroundLocationIndicator: true,
                     foregroundService: {
                         notificationTitle: FOREGROUND_SERVICE.notificationTitle,
-                        notificationBody:  FOREGROUND_SERVICE.notificationBody,
+                        notificationBody: FOREGROUND_SERVICE.notificationBody,
                         notificationColor: '#000000',
                     },
                 });
@@ -203,24 +203,26 @@ export default function CourierShiftScreen({ onLogout }) {
             try {
                 const courierId = unit?.unitId;
                 let pos = null;
-                try { pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }); } catch {}
+                try {
+                    pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+                } catch { }
 
                 if (courierId && pos) {
                     fetch(API_LOCATION, {
-                        method:  'POST',
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body:    JSON.stringify({
-                            courierId:       Number(courierId),
-                            lat:             pos.coords.latitude,
-                            lng:             pos.coords.longitude,
-                            speedKmh:        typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
-                            status:          'off_shift',
-                            timestamp:       new Date(pos.timestamp || Date.now()).toISOString(),
+                        body: JSON.stringify({
+                            courierId: Number(courierId),
+                            lat: pos.coords.latitude,
+                            lng: pos.coords.longitude,
+                            speedKmh: typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
+                            status: 'off_shift',
+                            timestamp: new Date(pos.timestamp || Date.now()).toISOString(),
                             courierNickname: unit?.unitNickname ?? null,
                         }),
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
-            } catch {}
+            } catch { }
 
             await AsyncStorage.removeItem('onShift');
             const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
@@ -233,22 +235,26 @@ export default function CourierShiftScreen({ onLogout }) {
 
     if (loading) {
         return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" />
-                <Text style={{ marginTop: 12 }}>Загрузка данных курьера...</Text>
-            </View>
+            // <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
+            <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
+                <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+                <View style={styles.bgCircleTop} pointerEvents="none" />
+                <View style={styles.bgCircleBottom} pointerEvents="none" />
+
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#2F8CFF" />
+                    <Text style={styles.loadingText}>Загрузка данных курьера...</Text>
+                </View>
+            </SafeAreaView>
         );
     }
 
     const nickname = unit?.unitNickname ?? 'Курьер';
-    const idText   = unit?.unitId ? String(unit.unitId) : '—';
-    const initial  = nickname.length > 0 ? nickname[0].toUpperCase() : '?';
+    const idText = unit?.unitId ? String(unit.unitId) : '—';
+    const initial = nickname.length > 0 ? nickname[0].toUpperCase() : '?';
 
-    // ── Контент вкладок ──────────────────────────────────────────────────────
     function renderTabContent() {
         switch (activeTab) {
-
-            // ─ Профиль / Смена ──────────────────────────────────────────────
             case TAB_TYPES.MENU:
                 return (
                     <View style={styles.container}>
@@ -256,36 +262,72 @@ export default function CourierShiftScreen({ onLogout }) {
                             <View style={styles.avatarCircle}>
                                 <Text style={styles.avatarText}>{initial}</Text>
                             </View>
+
                             <View style={styles.infoBlock}>
                                 <Text style={styles.nickname}>{nickname}</Text>
                                 <Text style={styles.unitId}>ID: {idText}</Text>
-                                {/* Индикатор WS-соединения */}
-                                <Text style={[styles.wsStatus, connected ? styles.wsOnline : styles.wsOffline]}>
-                                    {connected ? '● Online' : '○ Connecting...'}
-                                </Text>
+
+                                <View
+                                    style={[
+                                        styles.wsBadge,
+                                        connected ? styles.wsBadgeOnline : styles.wsBadgeOffline,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.wsBadgeText,
+                                            connected ? styles.wsOnline : styles.wsOffline,
+                                        ]}
+                                    >
+                                        {connected ? '● Online' : '○ Connecting...'}
+                                    </Text>
+                                </View>
                             </View>
+
                             <View style={styles.statusBlock}>
-                                <Text style={[styles.statusText, status === 'online' ? styles.online : styles.offline]}>
-                                    {status.toUpperCase()}
-                                </Text>
+                                <View
+                                    style={[
+                                        styles.shiftBadge,
+                                        status === 'online'
+                                            ? styles.shiftBadgeOnline
+                                            : styles.shiftBadgeOffline,
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.statusText,
+                                            status === 'online' ? styles.online : styles.offline,
+                                        ]}
+                                    >
+                                        {status === 'online' ? 'ON SHIFT' : 'OFFLINE'}
+                                    </Text>
+                                </View>
                             </View>
                         </View>
 
-                        <View style={styles.controls}>
-                            <TouchableOpacity style={styles.primaryButton} onPress={startShift}>
-                                <Text style={styles.primaryButtonText}>Начать смену</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.ghostButton} onPress={stopShift}>
-                                <Text style={styles.ghostButtonText}>Остановить</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
-                                <Text style={styles.exitButtonText}>Выйти</Text>
-                            </TouchableOpacity>
+                        <View style={styles.sectionCard}>
+                            <Text style={styles.sectionTitle}>Управление сменой</Text>
+                            <Text style={styles.sectionSubtitle}>
+                                Включайте и выключайте рабочую смену, управляйте статусом и выходом из аккаунта.
+                            </Text>
+
+                            <View style={styles.controls}>
+                                <TouchableOpacity style={styles.primaryButton} onPress={startShift} activeOpacity={0.85}>
+                                    <Text style={styles.primaryButtonText}>Начать смену</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={styles.ghostButton} onPress={stopShift} activeOpacity={0.85}>
+                                    <Text style={styles.ghostButtonText}>Остановить смену</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.85}>
+                                    <Text style={styles.exitButtonText}>Выйти из аккаунта</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     </View>
                 );
 
-            // ─ Все заказы ───────────────────────────────────────────────────
             case TAB_TYPES.ALL:
                 return (
                     <View style={{ flex: 1 }}>
@@ -298,7 +340,6 @@ export default function CourierShiftScreen({ onLogout }) {
                                     (async () => {
                                         try {
                                             await assignOrder(order.id);
-                                            // WS автоматически обновит availableOrders и myOrders
                                             setSelectedOrder(null);
                                             Alert.alert('Успешно', 'Заказ добавлен в ваши заказы');
                                         } catch (e) {
@@ -307,7 +348,7 @@ export default function CourierShiftScreen({ onLogout }) {
                                     })();
                                 }}
                                 onCall={(phone) => {
-                                    Linking.openURL(`tel:${phone}`).catch(() => {});
+                                    Linking.openURL(`tel:${phone}`).catch(() => { });
                                 }}
                             />
                         ) : !selectedOutlet ? (
@@ -332,7 +373,6 @@ export default function CourierShiftScreen({ onLogout }) {
                     </View>
                 );
 
-            // ─ Мои заказы ───────────────────────────────────────────────────
             case TAB_TYPES.MY:
                 return (
                     <MyOrdersScreen
@@ -349,12 +389,11 @@ export default function CourierShiftScreen({ onLogout }) {
                                 [
                                     { text: 'Отмена', style: 'cancel' },
                                     {
-                                        text:  'Удалить',
+                                        text: 'Удалить',
                                         style: 'destructive',
                                         onPress: async () => {
                                             try {
                                                 await releaseOrder(orderId);
-                                                // WS обновит myOrders и availableOrders автоматически
                                             } catch (e) {
                                                 Alert.alert('Ошибка', e.message);
                                             }
@@ -364,7 +403,6 @@ export default function CourierShiftScreen({ onLogout }) {
                             );
                         }}
                         onCompleteOrder={(orderId) => {
-                            // Локальная отметка "выполнен" (визуально)
                             setMyOrders((prev) =>
                                 prev.map((o) =>
                                     o.id === orderId
@@ -382,82 +420,287 @@ export default function CourierShiftScreen({ onLogout }) {
     }
 
     return (
-        <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
-            <View style={styles.mainContent}>
-                {renderTabContent()}
+        // <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
+        <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
+            <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+            <View style={styles.bgCircleTop} pointerEvents="none" />
+            <View style={styles.bgCircleBottom} pointerEvents="none" />
+
+            <View style={styles.mainContent}>{renderTabContent()}</View>
+
+            <View style={styles.tabBarWrapper}>
+                <TabNavigationBar activeTab={activeTab} onTabChange={setActiveTab} />
             </View>
-            <TabNavigationBar activeTab={activeTab} onTabChange={setActiveTab} />
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    safeContainer:    { flex: 1, backgroundColor: '#f4f7fb' },
-    mainContent:      { flex: 1, backgroundColor: '#f4f7fb', paddingBottom: 12 },
-    container:        { flex: 1, backgroundColor: '#f4f7fb' },
-    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f4f7fb' },
+    safeContainer: {
+        flex: 1,
+        backgroundColor: '#010B13',
+    },
+
+    mainContent: {
+        flex: 1,
+        backgroundColor: '#010B13',
+        paddingBottom: 12,
+    },
+
+    container: {
+        flex: 1,
+        backgroundColor: '#010B13',
+        paddingHorizontal: 16,
+        paddingTop: 12,
+    },
+
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#010B13',
+    },
+
+    loadingText: {
+        marginTop: 14,
+        color: '#A6B6C6',
+        fontSize: 15,
+    },
+
+    bgCircleTop: {
+        position: 'absolute',
+        top: -80,
+        right: -60,
+        width: 220,
+        height: 220,
+        borderRadius: 110,
+        backgroundColor: 'rgba(0, 122, 255, 0.12)',
+        zIndex: 0,
+    },
+
+    bgCircleBottom: {
+        position: 'absolute',
+        bottom: -100,
+        left: -80,
+        width: 260,
+        height: 260,
+        borderRadius: 130,
+        backgroundColor: 'rgba(0, 180, 255, 0.08)',
+        zIndex: 0,
+    },
 
     headerCard: {
-        flexDirection:  'row',
-        alignItems:     'center',
-        backgroundColor: '#fff',
-        marginTop:      12,
-        marginHorizontal: 12,
-        padding:        14,
-        borderRadius:   14,
-        shadowColor:    '#000',
-        shadowOpacity:  0.03,
-        shadowOffset:   { width: 0, height: 6 },
-        shadowRadius:   12,
-        elevation:      3,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        marginTop: 4,
+        padding: 16,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
+        shadowOffset: { width: 0, height: 10 },
+        shadowRadius: 20,
+        elevation: 10,
     },
+
     avatarCircle: {
-        width:          56,
-        height:         56,
-        borderRadius:   28,
+        width: 58,
+        height: 58,
+        borderRadius: 29,
         backgroundColor: '#007AFF',
         justifyContent: 'center',
-        alignItems:     'center',
+        alignItems: 'center',
+        shadowColor: '#007AFF',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+        elevation: 6,
     },
-    avatarText:   { color: '#fff', fontSize: 22, fontWeight: '700' },
-    infoBlock:    { marginLeft: 12, flex: 1 },
-    nickname:     { fontSize: 18, fontWeight: '700', color: '#111' },
-    unitId:       { marginTop: 4, fontSize: 13, color: '#657786' },
-    wsStatus:     { marginTop: 4, fontSize: 11, fontWeight: '700' },
-    wsOnline:     { color: '#16a34a' },
-    wsOffline:    { color: '#f59e0b' },
 
-    statusBlock:  { alignItems: 'flex-end' },
-    statusText:   { fontSize: 12, fontWeight: '800' },
-    online:       { color: '#16a34a' },
-    offline:      { color: '#888' },
+    avatarText: {
+        color: '#fff',
+        fontSize: 22,
+        fontWeight: '700',
+    },
 
-    controls:     { marginTop: 14, marginHorizontal: 12 },
+    infoBlock: {
+        marginLeft: 12,
+        flex: 1,
+    },
+
+    nickname: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#FFFFFF',
+        letterSpacing: 0.2,
+    },
+
+    unitId: {
+        marginTop: 4,
+        fontSize: 13,
+        color: '#8FA3B8',
+    },
+
+    wsBadge: {
+        marginTop: 8,
+        alignSelf: 'flex-start',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 999,
+        borderWidth: 1,
+    },
+
+    wsBadgeOnline: {
+        backgroundColor: 'rgba(34, 197, 94, 0.12)',
+        borderColor: 'rgba(34, 197, 94, 0.25)',
+    },
+
+    wsBadgeOffline: {
+        backgroundColor: 'rgba(245, 158, 11, 0.12)',
+        borderColor: 'rgba(245, 158, 11, 0.22)',
+    },
+
+    wsBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
+
+    wsOnline: {
+        color: '#4ADE80',
+    },
+
+    wsOffline: {
+        color: '#FBBF24',
+    },
+
+    statusBlock: {
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+    },
+
+    shiftBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 999,
+        borderWidth: 1,
+    },
+
+    shiftBadgeOnline: {
+        backgroundColor: 'rgba(34, 197, 94, 0.12)',
+        borderColor: 'rgba(34, 197, 94, 0.24)',
+    },
+
+    shiftBadgeOffline: {
+        backgroundColor: 'rgba(148, 163, 184, 0.10)',
+        borderColor: 'rgba(148, 163, 184, 0.16)',
+    },
+
+    statusText: {
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.4,
+    },
+
+    online: {
+        color: '#4ADE80',
+    },
+
+    offline: {
+        color: '#A3B1C2',
+    },
+
+    sectionCard: {
+        marginTop: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        borderRadius: 24,
+        padding: 18,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
+        shadowOffset: { width: 0, height: 10 },
+        shadowRadius: 20,
+        elevation: 10,
+    },
+
+    sectionTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        color: '#FFFFFF',
+        marginBottom: 6,
+    },
+
+    sectionSubtitle: {
+        fontSize: 14,
+        lineHeight: 21,
+        color: '#8FA3B8',
+        marginBottom: 18,
+    },
+
+    controls: {
+        marginTop: 2,
+    },
+
     primaryButton: {
+        height: 56,
         backgroundColor: '#007AFF',
-        paddingVertical: 12,
-        borderRadius:    12,
-        alignItems:      'center',
-        marginBottom:    10,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+        shadowColor: '#007AFF',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35,
+        shadowRadius: 14,
+        elevation: 6,
     },
-    primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+    primaryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.3,
+    },
+
     ghostButton: {
-        backgroundColor: '#fff',
-        borderWidth:     1,
-        borderColor:     '#e6e9ee',
-        paddingVertical: 12,
-        borderRadius:    12,
-        alignItems:      'center',
-        marginBottom:    10,
+        height: 56,
+        backgroundColor: '#0B1722',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
     },
-    ghostButtonText: { color: '#333', fontSize: 16, fontWeight: '700' },
+
+    ghostButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.3,
+    },
+
     exitButton: {
-        paddingVertical: 10,
-        borderRadius:    12,
-        alignItems:      'center',
-        backgroundColor: '#fff',
-        borderWidth:     1,
-        borderColor:     '#fdecea',
+        height: 54,
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.20)',
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    exitButtonText: { color: '#c53030', fontWeight: '800' },
+
+    exitButtonText: {
+        color: '#FF7B7B',
+        fontSize: 15,
+        fontWeight: '800',
+        letterSpacing: 0.3,
+    },
+
+    tabBarWrapper: {
+        backgroundColor: '#010B13',
+        // paddingTop: 2,
+    },
 });
