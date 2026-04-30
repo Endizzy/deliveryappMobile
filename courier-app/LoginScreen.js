@@ -1,11 +1,13 @@
 // LoginScreen.js
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
     TextInput,
     TouchableOpacity,
-    KeyboardAvoidingView,
+    ScrollView,
+    Animated,
+    Keyboard,
     Platform,
     StyleSheet,
     Alert,
@@ -15,11 +17,84 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
 import CourierAnimation from './assets/Lotties/Food Courier.json';
 
+// Keyboard padding через Animated.Value — без ре-рендера LoginScreen
+function useKeyboardPadding() {
+    const padding = useRef(new Animated.Value(24)).current;
+
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const onShow = (e) => {
+            Animated.timing(padding, {
+                toValue: e.endCoordinates.height + 24,
+                duration: 50,
+                useNativeDriver: false,
+            }).start();
+        };
+
+        const onHide = () => {
+            Animated.timing(padding, {
+                toValue: 24,
+                duration: 50,
+                useNativeDriver: false,
+            }).start();
+        };
+
+        const showSub = Keyboard.addListener(showEvent, onShow);
+        const hideSub = Keyboard.addListener(hideEvent, onHide);
+        return () => { showSub.remove(); hideSub.remove(); };
+    }, []);
+
+    return padding;
+}
+
+// Бордер тоже через Animated.Value — setState вообще не вызывается при фокусе,
+// поэтому компонент никогда не перерисовывается и TextInput не теряет фокус
+function FocusableInput({ label, ...props }) {
+    const anim = useRef(new Animated.Value(0)).current;
+
+    const borderColor = anim.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['rgba(255,255,255,0.06)', '#2F8CFF'],
+    });
+
+    const shadowOpacity = anim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, 0.18],
+    });
+
+    const handleFocus = () => {
+        Animated.timing(anim, { toValue: 1, duration: 150, useNativeDriver: false }).start();
+        props.onFocus?.();
+    };
+
+    const handleBlur = () => {
+        Animated.timing(anim, { toValue: 0, duration: 150, useNativeDriver: false }).start();
+        props.onBlur?.();
+    };
+
+    return (
+        <Animated.View style={[
+            styles.inputWrapper,
+            { borderColor, shadowColor: '#2F8CFF', shadowOpacity, shadowRadius: 10, elevation: 4 },
+        ]}>
+            <Text style={styles.inputLabel}>{label}</Text>
+            <TextInput
+                {...props}
+                style={styles.input}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+            />
+        </Animated.View>
+    );
+}
+
 export default function LoginScreen({ onLoginSuccess }) {
     const [login, setLogin] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
-    const [focusedField, setFocusedField] = useState(null);
+    const keyboardPadding = useKeyboardPadding();
 
     const handleSubmit = async () => {
         if (!login || !password) {
@@ -29,7 +104,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         setLoading(true);
         try {
-            const res = await fetch(`https://deliveryappserver-1.onrender.com/api/auth/courierlogin`, {
+            const res = await fetch('https://deliveryappserver-1.onrender.com/api/auth/courierlogin', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -37,8 +112,6 @@ export default function LoginScreen({ onLoginSuccess }) {
                     unit_password: password,
                 }),
             });
-
-            console.log('HTTP', res.status, res.headers.get('content-type'));
 
             const contentType = res.headers.get('content-type') || '';
             let data;
@@ -51,8 +124,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             }
 
             if (!res.ok) {
-                const message = data?.error || data?.message || 'Ошибка входа';
-                Alert.alert('Ошибка', message);
+                Alert.alert('Ошибка', data?.error || data?.message || 'Ошибка входа');
             } else {
                 const token = data.token;
                 if (!token) {
@@ -73,15 +145,16 @@ export default function LoginScreen({ onLoginSuccess }) {
     return (
         <>
             <StatusBar barStyle="light-content" backgroundColor="#010B13" />
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={styles.container}
-            >
-                {/* Декоративный фон */}
-                <View style={styles.bgCircleTop} />
-                <View style={styles.bgCircleBottom} />
+            <View style={styles.container}>
+                <Animated.ScrollView
+                    contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardPadding }]}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    bounces={false}
+                >
+                    <View style={styles.bgCircleTop} />
+                    <View style={styles.bgCircleBottom} />
 
-                <View style={styles.content}>
                     <View style={styles.logoWrapper}>
                         <LottieView
                             source={CourierAnimation}
@@ -97,53 +170,35 @@ export default function LoginScreen({ onLoginSuccess }) {
                     </Text>
 
                     <View style={styles.card}>
-                        <View
-                            style={[
-                                styles.inputWrapper,
-                                focusedField === 'login' && styles.inputWrapperFocused,
-                            ]}
-                        >
-                            <Text style={styles.inputLabel}>Логин</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Email или телефон"
-                                placeholderTextColor="#7E8A97"
-                                value={login}
-                                onChangeText={setLogin}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                keyboardType="email-address"
-                                autoComplete="off"
-                                importantForAutofill="no"
-                                onBlur={() => setFocusedField(null)}
-                                accessible={true}
-                                accessibilityLabel="Поле для ввода логина"
-                            />
-                        </View>
+                        <FocusableInput
+                            label="Логин"
+                            placeholder="Email или телефон"
+                            placeholderTextColor="#7E8A97"
+                            value={login}
+                            onChangeText={setLogin}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            keyboardType="email-address"
+                            autoComplete="off"
+                            importantForAutofill="no"
+                            accessible={true}
+                            accessibilityLabel="Поле для ввода логина"
+                        />
 
-                        <View
-                            style={[
-                                styles.inputWrapper,
-                                focusedField === 'password' && styles.inputWrapperFocused,
-                            ]}
-                        >
-                            <Text style={styles.inputLabel}>Пароль</Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Введите пароль"
-                                placeholderTextColor="#7E8A97"
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry
-                                autoComplete="off"
-                                importantForAutofill="no"
-                                returnKeyType="done"
-                                onSubmitEditing={handleSubmit}
-                                onBlur={() => setFocusedField(null)}
-                                accessible={true}
-                                accessibilityLabel="Поле для ввода пароля"
-                            />
-                        </View>
+                        <FocusableInput
+                            label="Пароль"
+                            placeholder="Введите пароль"
+                            placeholderTextColor="#7E8A97"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry
+                            autoComplete="off"
+                            importantForAutofill="no"
+                            returnKeyType="done"
+                            onSubmitEditing={handleSubmit}
+                            accessible={true}
+                            accessibilityLabel="Поле для ввода пароля"
+                        />
 
                         <TouchableOpacity
                             style={[styles.button, loading && styles.buttonDisabled]}
@@ -158,8 +213,8 @@ export default function LoginScreen({ onLoginSuccess }) {
                             </Text>
                         </TouchableOpacity>
                     </View>
-                </View>
-            </KeyboardAvoidingView>
+                </Animated.ScrollView>
+            </View>
         </>
     );
 }
@@ -170,12 +225,11 @@ const styles = StyleSheet.create({
         backgroundColor: '#010B13',
     },
 
-    content: {
-        flex: 1,
+    scrollContent: {
+        flexGrow: 1,
         justifyContent: 'center',
         paddingHorizontal: 24,
-        position: 'relative',
-        zIndex: 2,
+        paddingTop: 40,
     },
 
     bgCircleTop: {
@@ -186,7 +240,6 @@ const styles = StyleSheet.create({
         height: 220,
         borderRadius: 110,
         backgroundColor: 'rgba(0, 122, 255, 0.12)',
-        zIndex: 0,
     },
 
     bgCircleBottom: {
@@ -197,7 +250,6 @@ const styles = StyleSheet.create({
         height: 260,
         borderRadius: 130,
         backgroundColor: 'rgba(0, 180, 255, 0.08)',
-        zIndex: 0,
     },
 
     logoWrapper: {
@@ -249,16 +301,6 @@ const styles = StyleSheet.create({
         paddingBottom: 8,
         marginBottom: 14,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)',
-    },
-
-    inputWrapperFocused: {
-        borderColor: '#2F8CFF',
-        shadowColor: '#2F8CFF',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.18,
-        shadowRadius: 10,
-        elevation: 4,
     },
 
     inputLabel: {

@@ -26,6 +26,8 @@ import OrderDetailsScreenModern from './OrderDetailsScreenModern';
 import MyOrdersScreen from './MyOrdersScreen';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 import { useOrdersWebSocket } from './useOrdersWebSocket';
+import SettingsModal from './components/SettingsModal';
+import { Settings } from 'lucide-react-native';
 
 const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
@@ -65,6 +67,12 @@ export default function CourierShiftScreen({ onLogout }) {
     const [unit, setUnit] = useState(null);
     const [status, setStatus] = useState('offline');
     const [loading, setLoading] = useState(true);
+
+    // ── Settings state ──────────────────────────────────────────────────────
+    const [settingsVisible, setSettingsVisible] = useState(false);
+    const [language, setLanguage] = useState('ru');
+    const [theme, setTheme] = useState('dark');
+    const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     // ── Tab / navigation state ──────────────────────────────────────────────
     const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
@@ -302,6 +310,14 @@ export default function CourierShiftScreen({ onLogout }) {
                                         {status === 'online' ? 'ON SHIFT' : 'OFFLINE'}
                                     </Text>
                                 </View>
+
+                                <TouchableOpacity
+                                    style={styles.settingsButton}
+                                    onPress={() => setSettingsVisible(true)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.settingsButtonText}><Settings /></Text>
+                                </TouchableOpacity>
                             </View>
                         </View>
 
@@ -431,6 +447,17 @@ export default function CourierShiftScreen({ onLogout }) {
             <View style={styles.tabBarWrapper}>
                 <TabNavigationBar activeTab={activeTab} onTabChange={setActiveTab} />
             </View>
+
+            <SettingsModal
+                visible={settingsVisible}
+                onClose={() => setSettingsVisible(false)}
+                currentLanguage={language}
+                currentTheme={theme}
+                notificationSoundEnabled={notificationSoundEnabled}
+                onLanguageChange={(lang) => setLanguage(lang)}
+                onThemeChange={(thm) => setTheme(thm)}
+                onNotificationSoundChange={(enabled) => setNotificationSoundEnabled(enabled)}
+            />
         </SafeAreaView>
     );
 }
@@ -577,7 +604,24 @@ const styles = StyleSheet.create({
 
     statusBlock: {
         alignItems: 'flex-end',
+        justifyContent: 'space-between',
+        gap: 8,
+    },
+
+    settingsButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(0, 122, 255, 0.15)',
         justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(0, 122, 255, 0.20)',
+    },
+
+    settingsButtonText: {
+        fontSize: 16,
+        color: '#007AFF',
     },
 
     shiftBadge: {

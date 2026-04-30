@@ -176,8 +176,8 @@ export default function OrderDetailsScreenModern({
 
   const titleNumber =
     o.orderSeq ? `№${o.orderSeq}` :
-    o.orderNo ? String(o.orderNo) :
-    o.id ? `#${o.id}` : '—';
+      o.orderNo ? String(o.orderNo) :
+        o.id ? `#${o.id}` : '—';
 
   const createdAt = formatDateTime(o.createdAt);
   const deliverAt = formatDateTime(o.scheduledAt);
@@ -192,7 +192,13 @@ export default function OrderDetailsScreenModern({
   const handleCall = () => {
     if (!canCall) return;
     if (onCall) return onCall(phone, o);
-    Linking.openURL(`tel:${phone}`).catch(() => {});
+    Linking.openURL(`tel:${phone}`).catch(() => { });
+  };
+
+  const handleWaze = () => {
+    // const address = encodeURIComponent('Valdeķu iela 53, Riga'); fullAddress
+    const address = encodeURIComponent(safeText(fullAddress));
+    Linking.openURL(`https://waze.com/ul?q=${address}&navigate=yes`).catch(() => { });
   };
 
   const subtotal = formatMoney(o.amountSubtotal);
@@ -319,10 +325,9 @@ export default function OrderDetailsScreenModern({
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, !canCall && styles.actionBtnDisabled]}
+            style={styles.actionBtn}
             activeOpacity={0.9}
-            onPress={handleCall}
-            disabled={!canCall}
+            onPress={handleWaze}  
           >
             <View style={styles.actionIconCircle}>
               <Navigation size={18} color="#fff" strokeWidth={2.2} />
