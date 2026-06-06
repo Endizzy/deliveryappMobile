@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RotateCw, ChevronRight, ChevronLeft, PlusCircle, PackageOpen } from 'lucide-react-native';
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTheme } from './theme';
 
 function formatTimeOnly(dateStr) {
   if (!dateStr) return null;
@@ -99,6 +100,9 @@ export default function OrdersListScreenModern({
   outlet,
   onBack,
 }) {
+  const { colors: COLORS } = useTheme();
+  const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
   const [fetchedOrders, setFetchedOrders] = useState([]);
   const [loading, setLoading] = useState(ordersProp === null);
   const [error, setError] = useState(null);
@@ -227,7 +231,7 @@ export default function OrdersListScreenModern({
 
   return (
     <Wrapper style={styles.safe} edges={useSafeArea ? ['top', 'left', 'right'] : undefined}>
-      <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+      <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
 
       {/* <View style={styles.bgCircleTop} pointerEvents="none" />
       <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
@@ -239,9 +243,9 @@ export default function OrdersListScreenModern({
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           {onBack ? (
-            <ChevronLeft size={20} color="#FFFFFF" strokeWidth={2.2} />
+            <ChevronLeft size={20} color={COLORS.text} strokeWidth={2.2} />
           ) : (
-            <RotateCw size={20} color="#FFFFFF" strokeWidth={2.2} />
+            <RotateCw size={20} color={COLORS.text} strokeWidth={2.2} />
           )}
         </TouchableOpacity>
 
@@ -306,22 +310,7 @@ export default function OrdersListScreenModern({
   );
 }
 
-const COLORS = {
-  primary: '#2F8CFF',
-  bg: '#010B13',
-  card: '#0B1722',
-  cardStrong: '#0F2232',
-  text: '#FFFFFF',
-  muted: '#8FA3B8',
-  line: 'rgba(255,255,255,0.08)',
-  softBlue: 'rgba(47, 140, 255, 0.12)',
-  softBlueStrong: 'rgba(47, 140, 255, 0.18)',
-  softGray: 'rgba(255,255,255,0.03)',
-  success: '#4ADE80',
-  danger: '#FF7B7B',
-};
-
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -334,7 +323,7 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(0, 122, 255, 0.12)',
+    backgroundColor: COLORS.circleTop,
     zIndex: 0,
   },
 
@@ -345,7 +334,7 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: 'rgba(0, 180, 255, 0.08)',
+    backgroundColor: COLORS.circleBottom,
     zIndex: 0,
   },
 
@@ -363,9 +352,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: COLORS.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -382,7 +371,7 @@ const styles = StyleSheet.create({
   },
 
   headerTitle: {
-    color: '#FFFFFF',
+    color: COLORS.text,
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -423,7 +412,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47, 140, 255, 0.18)',
+    borderColor: COLORS.softBlueBorder,
     alignItems: 'center',
   },
 
@@ -442,10 +431,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: COLORS.lineSoft,
     marginBottom: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 22,
@@ -484,7 +473,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderWidth: 1,
-    borderColor: 'rgba(47,140,255,0.18)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   orderNumPrefix: {
@@ -568,7 +557,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: COLORS.line,
   },
 
   outletChipText: {
@@ -583,7 +572,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(47,140,255,0.18)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   priceChipText: {
@@ -604,7 +593,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47,140,255,0.16)',
+    borderColor: COLORS.softBlueBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -633,7 +622,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47,140,255,0.20)',
+    borderColor: COLORS.softBlueBorder,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 14,
@@ -654,7 +643,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOpacity: 0.25,
     shadowOffset: { width: 0, height: 10 },
     shadowRadius: 20,

@@ -1,5 +1,5 @@
-// CourierShiftScreen.js
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -28,6 +28,7 @@ import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 import { useOrdersWebSocket } from './useOrdersWebSocket';
 import SettingsModal from './components/SettingsModal';
 import { Settings } from 'lucide-react-native';
+import { useTheme } from './theme';
 
 const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
@@ -64,6 +65,9 @@ function getOutletCounts(orders) {
 }
 
 export default function CourierShiftScreen({ onLogout }) {
+    const { colors: COLORS, themeName, setTheme } = useTheme();
+    const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
     const [unit, setUnit] = useState(null);
     const [status, setStatus] = useState('offline');
     const [loading, setLoading] = useState(true);
@@ -71,7 +75,6 @@ export default function CourierShiftScreen({ onLogout }) {
     // ── Settings state ──────────────────────────────────────────────────────
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [language, setLanguage] = useState('ru');
-    const [theme, setTheme] = useState('dark');
     const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     // ── Tab / navigation state ──────────────────────────────────────────────
@@ -245,7 +248,7 @@ export default function CourierShiftScreen({ onLogout }) {
         return (
             // <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
             <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
-                <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+                <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
                 <View style={styles.bgCircleTop} pointerEvents="none" />
                 <View style={styles.bgCircleBottom} pointerEvents="none" />
 
@@ -316,7 +319,7 @@ export default function CourierShiftScreen({ onLogout }) {
                                     onPress={() => setSettingsVisible(true)}
                                     activeOpacity={0.7}
                                 >
-                                    <Text style={styles.settingsButtonText}><Settings /></Text>
+                                    <Text style={styles.settingsButtonText}><Settings color={COLORS.accent} /></Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -452,7 +455,7 @@ export default function CourierShiftScreen({ onLogout }) {
                 visible={settingsVisible}
                 onClose={() => setSettingsVisible(false)}
                 currentLanguage={language}
-                currentTheme={theme}
+                currentTheme={themeName}
                 notificationSoundEnabled={notificationSoundEnabled}
                 onLanguageChange={(lang) => setLanguage(lang)}
                 onThemeChange={(thm) => setTheme(thm)}
@@ -462,21 +465,21 @@ export default function CourierShiftScreen({ onLogout }) {
     );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
     safeContainer: {
         flex: 1,
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
     },
 
     mainContent: {
         flex: 1,
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
         paddingBottom: 12,
     },
 
     container: {
         flex: 1,
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
         paddingHorizontal: 16,
         paddingTop: 12,
     },
@@ -485,12 +488,12 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
     },
 
     loadingText: {
         marginTop: 14,
-        color: '#A6B6C6',
+        color: COLORS.muted,
         fontSize: 15,
     },
 
@@ -501,7 +504,7 @@ const styles = StyleSheet.create({
         width: 220,
         height: 220,
         borderRadius: 110,
-        backgroundColor: 'rgba(0, 122, 255, 0.12)',
+        backgroundColor: COLORS.circleTop,
         zIndex: 0,
     },
 
@@ -512,20 +515,20 @@ const styles = StyleSheet.create({
         width: 260,
         height: 260,
         borderRadius: 130,
-        backgroundColor: 'rgba(0, 180, 255, 0.08)',
+        backgroundColor: COLORS.circleBottom,
         zIndex: 0,
     },
 
     headerCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: COLORS.surface,
         marginTop: 4,
         padding: 16,
         borderRadius: 24,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-        shadowColor: '#000',
+        borderColor: COLORS.line,
+        shadowColor: COLORS.shadow,
         shadowOpacity: 0.25,
         shadowOffset: { width: 0, height: 10 },
         shadowRadius: 20,
@@ -536,10 +539,10 @@ const styles = StyleSheet.create({
         width: 58,
         height: 58,
         borderRadius: 29,
-        backgroundColor: '#007AFF',
+        backgroundColor: COLORS.accent,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#007AFF',
+        shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.35,
         shadowRadius: 12,
@@ -547,7 +550,7 @@ const styles = StyleSheet.create({
     },
 
     avatarText: {
-        color: '#fff',
+        color: COLORS.onPrimary,
         fontSize: 22,
         fontWeight: '700',
     },
@@ -560,14 +563,14 @@ const styles = StyleSheet.create({
     nickname: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: COLORS.text,
         letterSpacing: 0.2,
     },
 
     unitId: {
         marginTop: 4,
         fontSize: 13,
-        color: '#8FA3B8',
+        color: COLORS.muted,
     },
 
     wsBadge: {
@@ -595,11 +598,11 @@ const styles = StyleSheet.create({
     },
 
     wsOnline: {
-        color: '#4ADE80',
+        color: COLORS.success,
     },
 
     wsOffline: {
-        color: '#FBBF24',
+        color: COLORS.warning,
     },
 
     statusBlock: {
@@ -612,16 +615,16 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: 'rgba(0, 122, 255, 0.15)',
+        backgroundColor: COLORS.softBlue,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(0, 122, 255, 0.20)',
+        borderColor: COLORS.softBlueBorder,
     },
 
     settingsButtonText: {
         fontSize: 16,
-        color: '#007AFF',
+        color: COLORS.accent,
     },
 
     shiftBadge: {
@@ -648,21 +651,21 @@ const styles = StyleSheet.create({
     },
 
     online: {
-        color: '#4ADE80',
+        color: COLORS.success,
     },
 
     offline: {
-        color: '#A3B1C2',
+        color: COLORS.muted,
     },
 
     sectionCard: {
         marginTop: 16,
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: COLORS.surface,
         borderRadius: 24,
         padding: 18,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-        shadowColor: '#000',
+        borderColor: COLORS.line,
+        shadowColor: COLORS.shadow,
         shadowOpacity: 0.25,
         shadowOffset: { width: 0, height: 10 },
         shadowRadius: 20,
@@ -672,14 +675,14 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: COLORS.text,
         marginBottom: 6,
     },
 
     sectionSubtitle: {
         fontSize: 14,
         lineHeight: 21,
-        color: '#8FA3B8',
+        color: COLORS.muted,
         marginBottom: 18,
     },
 
@@ -689,12 +692,12 @@ const styles = StyleSheet.create({
 
     primaryButton: {
         height: 56,
-        backgroundColor: '#007AFF',
+        backgroundColor: COLORS.accent,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 12,
-        shadowColor: '#007AFF',
+        shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.35,
         shadowRadius: 14,
@@ -702,7 +705,7 @@ const styles = StyleSheet.create({
     },
 
     primaryButtonText: {
-        color: '#fff',
+        color: COLORS.onPrimary,
         fontSize: 16,
         fontWeight: '700',
         letterSpacing: 0.3,
@@ -710,9 +713,9 @@ const styles = StyleSheet.create({
 
     ghostButton: {
         height: 56,
-        backgroundColor: '#0B1722',
+        backgroundColor: COLORS.ghost,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: COLORS.line,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
@@ -720,7 +723,7 @@ const styles = StyleSheet.create({
     },
 
     ghostButtonText: {
-        color: '#FFFFFF',
+        color: COLORS.text,
         fontSize: 16,
         fontWeight: '700',
         letterSpacing: 0.3,
@@ -728,23 +731,23 @@ const styles = StyleSheet.create({
 
     exitButton: {
         height: 54,
-        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        backgroundColor: COLORS.softRed,
         borderWidth: 1,
-        borderColor: 'rgba(239, 68, 68, 0.20)',
+        borderColor: COLORS.softRedBorder,
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
     },
 
     exitButtonText: {
-        color: '#FF7B7B',
+        color: COLORS.danger,
         fontSize: 15,
         fontWeight: '800',
         letterSpacing: 0.3,
     },
 
     tabBarWrapper: {
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
         // paddingTop: 2,
     },
 });

@@ -1,5 +1,5 @@
-// AllOrdersScreen.js
-import React from 'react';
+
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from './theme';
 
 // Список точек выдачи — serverName должен совпадать со значением поля outlet в заказе
 const OUTLETS = [
@@ -24,6 +25,9 @@ const AllOrdersScreen = ({
   onOpenOutlet,
   outletCounts = {},
 }) => {
+  const { colors: COLORS } = useTheme();
+  const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
   const getCount = (item) => {
     if (item.isAll) {
       return Object.values(outletCounts).reduce((sum, v) => sum + v, 0);
@@ -80,7 +84,7 @@ const AllOrdersScreen = ({
 
   const content = (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+      <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
 
       {/* <View style={styles.bgCircleTop} pointerEvents="none" />
       <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
@@ -115,19 +119,7 @@ const AllOrdersScreen = ({
 
 export default AllOrdersScreen;
 
-const COLORS = {
-  primary: '#2F8CFF',
-  bg: '#010B13',
-  card: '#0B1722',
-  cardAlt: '#0F2232',
-  text: '#FFFFFF',
-  muted: '#8FA3B8',
-  line: 'rgba(255,255,255,0.08)',
-  softBlue: 'rgba(47, 140, 255, 0.12)',
-  softBlueStrong: 'rgba(47, 140, 255, 0.18)',
-};
-
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -140,7 +132,7 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(0, 122, 255, 0.12)',
+    backgroundColor: COLORS.circleTop,
     zIndex: 0,
   },
 
@@ -151,7 +143,7 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: 'rgba(0, 180, 255, 0.08)',
+    backgroundColor: COLORS.circleBottom,
     zIndex: 0,
   },
 
@@ -195,7 +187,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.line,
     marginBottom: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 22,
@@ -204,11 +196,11 @@ const styles = StyleSheet.create({
 
   cardAll: {
     backgroundColor: COLORS.cardAlt,
-    borderColor: 'rgba(47, 140, 255, 0.16)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   cardWithOrders: {
-    borderColor: 'rgba(47, 140, 255, 0.18)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   cardMain: {
@@ -253,7 +245,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47, 140, 255, 0.18)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   allPillText: {
@@ -269,8 +261,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: COLORS.lineStrong,
+    backgroundColor: COLORS.softGray,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -292,6 +284,6 @@ const styles = StyleSheet.create({
   },
 
   badgeTextActive: {
-    color: '#FFFFFF',
+    color: COLORS.onPrimary,
   },
 });

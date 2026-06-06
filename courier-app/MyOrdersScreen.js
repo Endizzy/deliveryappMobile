@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronRight, CheckCircle2, Clock } from 'lucide-react-native';
+import { useTheme } from './theme';
 
 // Форматирование только времени (например: "14:16")
 function formatTimeOnly(dateStr) {
@@ -35,6 +36,9 @@ export default function MyOrdersScreen({
   onRemoveOrder,
   onCompleteOrder,
 }) {
+  const { colors: COLORS } = useTheme();
+  const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
   const { active, completed } = useMemo(() => {
     return {
       active: myOrders.filter((o) => !o.completed),
@@ -147,7 +151,7 @@ export default function MyOrdersScreen({
 
   const content = (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+      <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
 
       {/* <View style={styles.bgCircleTop} pointerEvents="none" />
       <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
@@ -230,24 +234,7 @@ export default function MyOrdersScreen({
   return <View style={styles.safe}>{content}</View>;
 }
 
-const COLORS = {
-  primary: '#2F8CFF',
-  success: '#4ADE80',
-  danger: '#FF7B7B',
-  bg: '#010B13',
-  // card: 'rgba(255, 255, 255, 0.04)',
-  // cardStrong: '#0B1722',
-  card: '#0B1722',
-  cardStrong: '#0F2232',
-  text: '#FFFFFF',
-  muted: '#8FA3B8',
-  line: 'rgba(255,255,255,0.08)',
-  softBlue: 'rgba(47, 140, 255, 0.12)',
-  softGreen: 'rgba(74, 222, 128, 0.12)',
-  softRed: 'rgba(255, 123, 123, 0.10)',
-};
-
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -260,7 +247,7 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(0, 122, 255, 0.12)',
+    backgroundColor: COLORS.circleTop,
     zIndex: 0,
   },
 
@@ -271,7 +258,7 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: 'rgba(0, 180, 255, 0.08)',
+    backgroundColor: COLORS.circleBottom,
     zIndex: 0,
   },
 
@@ -318,7 +305,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOpacity: 0.25,
     shadowOffset: { width: 0, height: 10 },
     shadowRadius: 20,
@@ -331,7 +318,7 @@ const styles = StyleSheet.create({
     borderRadius: 39,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0B1722',
+    backgroundColor: COLORS.cardStrong,
     borderWidth: 1,
     borderColor: COLORS.line,
   },
@@ -386,7 +373,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47, 140, 255, 0.22)',
+    borderColor: COLORS.softBlueBorder,
     alignItems: 'center',
   },
 
@@ -398,7 +385,7 @@ const styles = StyleSheet.create({
 
   badgeCompleted: {
     backgroundColor: COLORS.softGreen,
-    borderColor: 'rgba(74, 222, 128, 0.20)',
+    borderColor: COLORS.softGreenBorder,
   },
 
   badgeTextCompleted: {
@@ -426,11 +413,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.card,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: COLORS.lineSoft,
 
     marginBottom: 10,
 
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 22,
@@ -442,8 +429,8 @@ const styles = StyleSheet.create({
   //   borderColor: 'rgba(74, 222, 128, 0.14)',
   // },
   cardCompleted: {
-    backgroundColor: '#08131d',
-    borderColor: 'rgba(74,222,128,0.18)',
+    backgroundColor: COLORS.cardCompleted,
+    borderColor: COLORS.softGreenBorder,
   },
 
   cardContent: {
@@ -466,12 +453,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderWidth: 1,
-    borderColor: 'rgba(47, 140, 255, 0.18)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   orderNumPillCompleted: {
     backgroundColor: COLORS.softGreen,
-    borderColor: 'rgba(74, 222, 128, 0.20)',
+    borderColor: COLORS.softGreenBorder,
   },
 
   orderNumPrefix: {
@@ -510,7 +497,7 @@ const styles = StyleSheet.create({
   },
 
   timeTextCompleted: {
-    color: 'rgba(143,163,184,0.75)',
+    color: COLORS.muted,
   },
 
   timeDot: {
@@ -534,7 +521,7 @@ const styles = StyleSheet.create({
   },
 
   addressCompleted: {
-    color: 'rgba(255,255,255,0.70)',
+    color: COLORS.muted,
   },
 
   customerText: {
@@ -545,7 +532,7 @@ const styles = StyleSheet.create({
   },
 
   customerTextCompleted: {
-    color: 'rgba(143,163,184,0.70)',
+    color: COLORS.muted,
   },
 
   actions: {
@@ -566,7 +553,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLORS.softGreen,
     borderWidth: 1,
-    borderColor: 'rgba(74, 222, 128, 0.20)',
+    borderColor: COLORS.softGreenBorder,
   },
 
   completeBtnText: {
@@ -581,7 +568,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: COLORS.softRed,
     borderWidth: 1,
-    borderColor: 'rgba(255, 123, 123, 0.20)',
+    borderColor: COLORS.softRedBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },

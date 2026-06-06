@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import CourierShiftScreen from './CourierShiftScreen';
 import LoginScreen from './LoginScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ThemeProvider } from './theme';
 
 export default function App() {
   const [isAuth, setIsAuth] = useState(null); // null — состояние загрузки
@@ -25,14 +26,16 @@ export default function App() {
   }
 
   return (
-      // <- SafeAreaProvider должен быть НАД всем UI
-      <SafeAreaProvider>
-        {!isAuth ? (
-            <LoginScreen onLoginSuccess={() => setIsAuth(true)} />
-        ) : (
-            <CourierShiftScreen onLogout={() => setIsAuth(false)} />
-        )}
-      </SafeAreaProvider>
+      // <- ThemeProvider и SafeAreaProvider должны быть НАД всем UI
+      <ThemeProvider>
+        <SafeAreaProvider>
+          {!isAuth ? (
+              <LoginScreen onLoginSuccess={() => setIsAuth(true)} />
+          ) : (
+              <CourierShiftScreen onLogout={() => setIsAuth(false)} />
+          )}
+        </SafeAreaProvider>
+      </ThemeProvider>
   );
 }
 

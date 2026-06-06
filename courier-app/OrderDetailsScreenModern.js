@@ -13,6 +13,7 @@ import {
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from './theme';
 import {
   ChevronLeft,
   Phone,
@@ -131,6 +132,9 @@ export default function OrderDetailsScreenModern({
   onTake,
   onCall,
 }) {
+  const { colors: COLORS } = useTheme();
+  const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
   const [details, setDetails] = useState(order && (order.items || order.items_json) ? order : null);
   const [loading, setLoading] = useState(!(order?.items || order?.items_json));
   const [error, setError] = useState(null);
@@ -209,7 +213,7 @@ export default function OrderDetailsScreenModern({
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+        <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
         <View style={styles.bgCircleTop} pointerEvents="none" />
         <View style={styles.bgCircleBottom} pointerEvents="none" />
         <View style={styles.centerState}>
@@ -223,7 +227,7 @@ export default function OrderDetailsScreenModern({
   if (error) {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+        <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
         <View style={styles.bgCircleTop} pointerEvents="none" />
         <View style={styles.bgCircleBottom} pointerEvents="none" />
         <View style={styles.centerState}>
@@ -258,7 +262,7 @@ export default function OrderDetailsScreenModern({
           onPress={onBack}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <ChevronLeft size={22} color="#FFFFFF" strokeWidth={2.6} />
+          <ChevronLeft size={22} color={COLORS.text} strokeWidth={2.6} />
         </TouchableOpacity>
 
         <View style={styles.topCenter}>
@@ -319,7 +323,7 @@ export default function OrderDetailsScreenModern({
             disabled={!canCall}
           >
             <View style={styles.actionIconCircle}>
-              <Phone size={18} color="#fff" strokeWidth={2.2} />
+              <Phone size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
             <Text style={styles.actionText}>Звонок</Text>
           </TouchableOpacity>
@@ -330,7 +334,7 @@ export default function OrderDetailsScreenModern({
             onPress={handleWaze}  
           >
             <View style={styles.actionIconCircle}>
-              <Navigation size={18} color="#fff" strokeWidth={2.2} />
+              <Navigation size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
             <Text style={styles.actionText}>Waze</Text>
           </TouchableOpacity>
@@ -341,7 +345,7 @@ export default function OrderDetailsScreenModern({
             onPress={() => onTake?.(o)}
           >
             <View style={[styles.actionIconCircle, styles.actionIconCirclePrimary]}>
-              <PlusCircle size={18} color="#fff" strokeWidth={2.2} />
+              <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
             <Text style={[styles.actionText, styles.actionTextPrimary]}>ВЗЯТЬ</Text>
           </TouchableOpacity>
@@ -446,21 +450,7 @@ export default function OrderDetailsScreenModern({
   );
 }
 
-const COLORS = {
-  primary: '#2F8CFF',
-  bg: '#010B13',
-  card: '#0B1722',
-  cardStrong: '#0F2232',
-  text: '#FFFFFF',
-  muted: '#8FA3B8',
-  line: 'rgba(255,255,255,0.08)',
-  softBlue: 'rgba(47, 140, 255, 0.12)',
-  softGray: 'rgba(255,255,255,0.03)',
-  success: '#4ADE80',
-  danger: '#FF7B7B',
-};
-
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: COLORS.bg,
@@ -473,7 +463,7 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(0, 122, 255, 0.12)',
+    backgroundColor: COLORS.circleTop,
     zIndex: 0,
   },
 
@@ -484,7 +474,7 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: 'rgba(0, 180, 255, 0.08)',
+    backgroundColor: COLORS.circleBottom,
     zIndex: 0,
   },
 
@@ -501,9 +491,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: COLORS.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -548,8 +538,8 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    shadowColor: '#000',
+    borderColor: COLORS.lineSoft,
+    shadowColor: COLORS.shadow,
     shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
     shadowOffset: { width: 0, height: 12 },
     shadowRadius: 22,
@@ -662,9 +652,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: COLORS.card,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: COLORS.lineSoft,
     justifyContent: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.shadow,
     shadowOpacity: Platform.OS === 'ios' ? 0.28 : 0.20,
     shadowOffset: { width: 0, height: 10 },
     shadowRadius: 18,
@@ -673,7 +663,7 @@ const styles = StyleSheet.create({
 
   actionBtnPrimary: {
     backgroundColor: COLORS.softBlue,
-    borderColor: 'rgba(47,140,255,0.20)',
+    borderColor: COLORS.softBlueBorder,
   },
 
   actionBtnDisabled: {
@@ -717,7 +707,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47,140,255,0.16)',
+    borderColor: COLORS.softBlueBorder,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -774,7 +764,7 @@ const styles = StyleSheet.create({
   smallField: {
     backgroundColor: COLORS.softGray,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: COLORS.line,
     borderRadius: 16,
     padding: 12,
   },
@@ -806,7 +796,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: COLORS.lineSoft,
     paddingLeft: 6,
   },
 
@@ -885,7 +875,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
-    borderColor: 'rgba(47,140,255,0.20)',
+    borderColor: COLORS.softBlueBorder,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 14,

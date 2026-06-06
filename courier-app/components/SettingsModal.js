@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
@@ -9,6 +9,7 @@ import {
     Switch,
     Alert,
 } from 'react-native';
+import { useTheme } from '../theme';
 
 const LANGUAGES = [
     { code: 'ru', label: 'Русский' },
@@ -31,9 +32,15 @@ export default function SettingsModal({
     onNotificationSoundChange,
     notificationSoundEnabled = true,
 }) {
+    const { colors: COLORS } = useTheme();
+    const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
     const [localLanguage, setLocalLanguage] = useState(currentLanguage);
-    const [localTheme, setLocalTheme] = useState(currentTheme);
     const [soundEnabled, setSoundEnabled] = useState(notificationSoundEnabled);
+
+    // Выбранная тема берётся напрямую из глобального состояния, чтобы
+    // подсветка всегда отражала реально применённую тему.
+    const localTheme = currentTheme;
 
     const handleLanguageChange = (code) => {
         setLocalLanguage(code);
@@ -41,7 +48,6 @@ export default function SettingsModal({
     };
 
     const handleThemeChange = (code) => {
-        setLocalTheme(code);
         onThemeChange?.(code);
     };
 
@@ -89,8 +95,8 @@ export default function SettingsModal({
                             <Switch
                                 value={soundEnabled}
                                 onValueChange={handleSoundToggle}
-                                trackColor={{ false: '#404854', true: '#4ADE80' }}
-                                thumbColor={soundEnabled ? '#2ecc71' : '#888'}
+                                trackColor={{ false: COLORS.switchTrackOff, true: COLORS.switchTrackOn }}
+                                thumbColor={soundEnabled ? COLORS.switchThumbOn : COLORS.switchThumbOff}
                             />
                         </View>
                     </View>
@@ -169,10 +175,10 @@ export default function SettingsModal({
     );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
     },
 
     header: {
@@ -182,8 +188,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 14,
         borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
+        borderBottomColor: COLORS.line,
+        backgroundColor: COLORS.surfaceSoft,
     },
 
     headerContent: {
@@ -193,7 +199,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: COLORS.text,
         letterSpacing: 0.2,
     },
 
@@ -201,7 +207,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: COLORS.surface,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -209,7 +215,7 @@ const styles = StyleSheet.create({
     closeButtonText: {
         fontSize: 20,
         fontWeight: '600',
-        color: '#A6B6C6',
+        color: COLORS.muted,
     },
 
     content: {
@@ -229,7 +235,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: COLORS.text,
         marginBottom: 12,
         letterSpacing: 0.2,
     },
@@ -238,12 +244,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: COLORS.surface,
         borderRadius: 16,
         paddingHorizontal: 14,
         paddingVertical: 14,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: COLORS.line,
     },
 
     settingInfo: {
@@ -254,41 +260,41 @@ const styles = StyleSheet.create({
     settingLabel: {
         fontSize: 15,
         fontWeight: '600',
-        color: '#FFFFFF',
+        color: COLORS.text,
         marginBottom: 4,
     },
 
     settingDescription: {
         fontSize: 12,
-        color: '#8FA3B8',
+        color: COLORS.muted,
     },
 
     optionButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: COLORS.surface,
         borderRadius: 16,
         paddingHorizontal: 14,
         paddingVertical: 14,
         marginBottom: 10,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: COLORS.line,
     },
 
     optionButtonActive: {
-        backgroundColor: 'rgba(0, 122, 255, 0.12)',
-        borderColor: 'rgba(0, 122, 255, 0.24)',
+        backgroundColor: COLORS.softBlue,
+        borderColor: COLORS.softBlueBorder,
     },
 
     optionButtonText: {
         fontSize: 15,
         fontWeight: '500',
-        color: '#A6B6C6',
+        color: COLORS.muted,
     },
 
     optionButtonTextActive: {
-        color: '#007AFF',
+        color: COLORS.accent,
         fontWeight: '600',
     },
 
@@ -296,29 +302,29 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
         borderRadius: 12,
-        backgroundColor: '#007AFF',
+        backgroundColor: COLORS.accent,
         justifyContent: 'center',
         alignItems: 'center',
     },
 
     checkmarkText: {
-        color: '#FFFFFF',
+        color: COLORS.onPrimary,
         fontSize: 14,
         fontWeight: '700',
     },
 
     infoBox: {
-        backgroundColor: 'rgba(0, 122, 255, 0.08)',
+        backgroundColor: COLORS.softBlue,
         borderRadius: 12,
         paddingHorizontal: 14,
         paddingVertical: 12,
         borderWidth: 1,
-        borderColor: 'rgba(0, 122, 255, 0.16)',
+        borderColor: COLORS.softBlueBorder,
     },
 
     infoText: {
         fontSize: 13,
-        color: '#7BA3D0',
+        color: COLORS.primary,
         lineHeight: 18,
         textAlign: 'center',
     },

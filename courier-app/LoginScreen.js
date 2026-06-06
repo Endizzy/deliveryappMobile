@@ -1,5 +1,5 @@
 // LoginScreen.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -16,6 +16,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
 import CourierAnimation from './assets/Lotties/Food Courier.json';
+import { useTheme } from './theme';
 
 // Keyboard padding через Animated.Value — без ре-рендера LoginScreen
 function useKeyboardPadding() {
@@ -52,11 +53,13 @@ function useKeyboardPadding() {
 // Бордер тоже через Animated.Value — setState вообще не вызывается при фокусе,
 // поэтому компонент никогда не перерисовывается и TextInput не теряет фокус
 function FocusableInput({ label, ...props }) {
+    const { colors: COLORS } = useTheme();
+    const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
     const anim = useRef(new Animated.Value(0)).current;
 
     const borderColor = anim.interpolate({
         inputRange: [0, 1],
-        outputRange: ['rgba(255,255,255,0.06)', '#2F8CFF'],
+        outputRange: [COLORS.lineSoft, COLORS.primary],
     });
 
     const shadowOpacity = anim.interpolate({
@@ -77,7 +80,7 @@ function FocusableInput({ label, ...props }) {
     return (
         <Animated.View style={[
             styles.inputWrapper,
-            { borderColor, shadowColor: '#2F8CFF', shadowOpacity, shadowRadius: 10, elevation: 4 },
+            { borderColor, shadowColor: COLORS.primary, shadowOpacity, shadowRadius: 10, elevation: 4 },
         ]}>
             <Text style={styles.inputLabel}>{label}</Text>
             <TextInput
@@ -91,6 +94,9 @@ function FocusableInput({ label, ...props }) {
 }
 
 export default function LoginScreen({ onLoginSuccess }) {
+    const { colors: COLORS } = useTheme();
+    const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
     const [login, setLogin] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -144,7 +150,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
     return (
         <>
-            <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+            <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
             <View style={styles.container}>
                 <Animated.ScrollView
                     contentContainerStyle={[styles.scrollContent, { paddingBottom: keyboardPadding }]}
@@ -173,7 +179,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                         <FocusableInput
                             label="Логин"
                             placeholder="Email или телефон"
-                            placeholderTextColor="#7E8A97"
+                            placeholderTextColor={COLORS.placeholder}
                             value={login}
                             onChangeText={setLogin}
                             autoCapitalize="none"
@@ -188,7 +194,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                         <FocusableInput
                             label="Пароль"
                             placeholder="Введите пароль"
-                            placeholderTextColor="#7E8A97"
+                            placeholderTextColor={COLORS.placeholder}
                             value={password}
                             onChangeText={setPassword}
                             secureTextEntry
@@ -219,10 +225,10 @@ export default function LoginScreen({ onLoginSuccess }) {
     );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (COLORS) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#010B13',
+        backgroundColor: COLORS.bg,
     },
 
     scrollContent: {
@@ -239,7 +245,7 @@ const styles = StyleSheet.create({
         width: 220,
         height: 220,
         borderRadius: 110,
-        backgroundColor: 'rgba(0, 122, 255, 0.12)',
+        backgroundColor: COLORS.circleTop,
     },
 
     bgCircleBottom: {
@@ -249,7 +255,7 @@ const styles = StyleSheet.create({
         width: 260,
         height: 260,
         borderRadius: 130,
-        backgroundColor: 'rgba(0, 180, 255, 0.08)',
+        backgroundColor: COLORS.circleBottom,
     },
 
     logoWrapper: {
@@ -265,7 +271,7 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 30,
         fontWeight: '700',
-        color: '#FFFFFF',
+        color: COLORS.text,
         textAlign: 'center',
         letterSpacing: 0.3,
     },
@@ -275,18 +281,18 @@ const styles = StyleSheet.create({
         marginBottom: 28,
         fontSize: 15,
         lineHeight: 22,
-        color: '#8FA3B8',
+        color: COLORS.muted,
         textAlign: 'center',
         paddingHorizontal: 8,
     },
 
     card: {
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
+        backgroundColor: COLORS.surface,
         borderRadius: 24,
         padding: 18,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-        shadowColor: '#000',
+        borderColor: COLORS.line,
+        shadowColor: COLORS.shadow,
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.25,
         shadowRadius: 20,
@@ -294,7 +300,7 @@ const styles = StyleSheet.create({
     },
 
     inputWrapper: {
-        backgroundColor: '#0B1722',
+        backgroundColor: COLORS.inputBg,
         borderRadius: 16,
         paddingHorizontal: 16,
         paddingTop: 12,
@@ -305,7 +311,7 @@ const styles = StyleSheet.create({
 
     inputLabel: {
         fontSize: 12,
-        color: '#7F93A8',
+        color: COLORS.inputLabel,
         marginBottom: 6,
         fontWeight: '600',
         letterSpacing: 0.3,
@@ -314,7 +320,7 @@ const styles = StyleSheet.create({
     input: {
         height: 28,
         fontSize: 16,
-        color: '#FFFFFF',
+        color: COLORS.text,
         padding: 0,
     },
 
@@ -324,8 +330,8 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#007AFF',
-        shadowColor: '#007AFF',
+        backgroundColor: COLORS.accent,
+        shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.35,
         shadowRadius: 14,
@@ -337,7 +343,7 @@ const styles = StyleSheet.create({
     },
 
     buttonText: {
-        color: '#FFFFFF',
+        color: COLORS.onPrimary,
         fontSize: 17,
         fontWeight: '700',
         letterSpacing: 0.3,
