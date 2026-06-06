@@ -5,55 +5,108 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const THEME_STORAGE_KEY = 'appTheme';
 
 // dark theme
+// const dark = {
+//     mode: 'dark',
+//     statusBar: 'light-content',
+
+//     primary: '#2F8CFF',
+//     accent: '#007AFF',
+
+//     bg: '#010B13',
+//     card: '#0B1722',
+//     cardStrong: '#0F2232',
+//     cardAlt: '#0F2232',
+//     cardCompleted: '#08131d',
+//     ghost: '#0B1722',
+//     inputBg: '#0B1722',
+
+//     surface: 'rgba(255, 255, 255, 0.04)',
+//     surfaceSoft: 'rgba(255, 255, 255, 0.02)',
+//     softGray: 'rgba(255, 255, 255, 0.03)',
+
+//     text: '#FFFFFF',
+//     muted: '#8FA3B8',
+//     onPrimary: '#FFFFFF',
+//     inputLabel: '#7F93A8',
+//     placeholder: '#7E8A97',
+
+//     line: 'rgba(255, 255, 255, 0.08)',
+//     lineSoft: 'rgba(255, 255, 255, 0.06)',
+//     lineStrong: 'rgba(255, 255, 255, 0.10)',
+
+//     softBlue: 'rgba(47, 140, 255, 0.12)',
+//     softBlueStrong: 'rgba(47, 140, 255, 0.18)',
+//     softBlueBorder: 'rgba(47, 140, 255, 0.18)',
+
+//     success: '#4ADE80',
+//     danger: '#FF7B7B',
+//     warning: '#FBBF24',
+//     softGreen: 'rgba(74, 222, 128, 0.12)',
+//     softGreenBorder: 'rgba(74, 222, 128, 0.20)',
+//     softRed: 'rgba(255, 123, 123, 0.10)',
+//     softRedBorder: 'rgba(255, 123, 123, 0.20)',
+
+//     shadow: '#000',
+//     circleTop: 'rgba(0, 122, 255, 0.12)',
+//     circleBottom: 'rgba(0, 180, 255, 0.08)',
+
+//     switchTrackOff: '#404854',
+//     switchTrackOn: '#4ADE80',
+//     switchThumbOn: '#2ecc71',
+//     switchThumbOff: '#888',
+// };
+
+// dark theme — «Graphite Mono»: нейтральный серый графит без синего подтона,
+// многоуровневые поверхности и небесно-синий акцент.
 const dark = {
     mode: 'dark',
     statusBar: 'light-content',
 
-    primary: '#2F8CFF',
-    accent: '#007AFF',
+    primary: '#5AA0FF',
+    accent: '#3B82F6',
 
-    bg: '#010B13',
-    card: '#0B1722',
-    cardStrong: '#0F2232',
-    cardAlt: '#0F2232',
-    cardCompleted: '#08131d',
-    ghost: '#0B1722',
-    inputBg: '#0B1722',
+    bg: '#16181B',
+    card: '#1F2227',
+    cardStrong: '#272B31',
+    cardAlt: '#272B31',
+    cardCompleted: '#19211C',
+    ghost: '#23272D',
+    inputBg: '#23272D',
 
-    surface: 'rgba(255, 255, 255, 0.04)',
-    surfaceSoft: 'rgba(255, 255, 255, 0.02)',
-    softGray: 'rgba(255, 255, 255, 0.03)',
+    surface: '#1F2227',
+    surfaceSoft: 'rgba(255, 255, 255, 0.03)',
+    softGray: 'rgba(255, 255, 255, 0.05)',
 
-    text: '#FFFFFF',
-    muted: '#8FA3B8',
+    text: '#EDEFF2',
+    muted: '#9BA1AB',
     onPrimary: '#FFFFFF',
-    inputLabel: '#7F93A8',
-    placeholder: '#7E8A97',
+    inputLabel: '#9098A2',
+    placeholder: '#6C737D',
 
-    line: 'rgba(255, 255, 255, 0.08)',
+    line: 'rgba(255, 255, 255, 0.09)',
     lineSoft: 'rgba(255, 255, 255, 0.06)',
-    lineStrong: 'rgba(255, 255, 255, 0.10)',
+    lineStrong: 'rgba(255, 255, 255, 0.14)',
 
-    softBlue: 'rgba(47, 140, 255, 0.12)',
-    softBlueStrong: 'rgba(47, 140, 255, 0.18)',
-    softBlueBorder: 'rgba(47, 140, 255, 0.18)',
+    softBlue: 'rgba(90, 160, 255, 0.14)',
+    softBlueStrong: 'rgba(90, 160, 255, 0.22)',
+    softBlueBorder: 'rgba(90, 160, 255, 0.32)',
 
     success: '#4ADE80',
-    danger: '#FF7B7B',
+    danger: '#FF6B6B',
     warning: '#FBBF24',
-    softGreen: 'rgba(74, 222, 128, 0.12)',
-    softGreenBorder: 'rgba(74, 222, 128, 0.20)',
-    softRed: 'rgba(255, 123, 123, 0.10)',
-    softRedBorder: 'rgba(255, 123, 123, 0.20)',
+    softGreen: 'rgba(74, 222, 128, 0.14)',
+    softGreenBorder: 'rgba(74, 222, 128, 0.26)',
+    softRed: 'rgba(255, 107, 107, 0.12)',
+    softRedBorder: 'rgba(255, 107, 107, 0.26)',
 
-    shadow: '#000',
-    circleTop: 'rgba(0, 122, 255, 0.12)',
-    circleBottom: 'rgba(0, 180, 255, 0.08)',
+    shadow: '#000000',
+    circleTop: 'rgba(90, 160, 255, 0.12)',
+    circleBottom: 'rgba(255, 255, 255, 0.04)',
 
-    switchTrackOff: '#404854',
+    switchTrackOff: '#3A3F46',
     switchTrackOn: '#4ADE80',
-    switchThumbOn: '#2ecc71',
-    switchThumbOff: '#888',
+    switchThumbOn: '#EAFBF0',
+    switchThumbOff: '#C4CAD2',
 };
 
 // light theme
@@ -111,7 +164,7 @@ const light = {
 export const PALETTES = { dark, light };
 
 export function getColors(themeName) {
-    return PALETTES[themeName] || dark;
+    return PALETTES[themeName] || light;// news default to light if something goes wrong
 }
 
 const ThemeContext = createContext({

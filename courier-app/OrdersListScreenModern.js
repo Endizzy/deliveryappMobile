@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RotateCw, ChevronRight, ChevronLeft, PlusCircle, PackageOpen } from 'lucide-react-native';
+import { RotateCw, ChevronLeft, PlusCircle, PackageOpen } from 'lucide-react-native';
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './theme';
@@ -151,6 +151,11 @@ export default function OrdersListScreenModern({
 
   const renderItem = ({ item }) => {
     const status = statusLabel(item.status);
+    const created = formatTimeOnly(item.createdAt);
+    const scheduled = formatTimeOnly(item.scheduledAt);
+    const primaryTime = scheduled || created || '—';
+    const timeCaption = scheduled ? 'выдача' : 'принят';
+    const orderNo = item.orderSeq || item.orderNo || item.id;
 
     return (
       <TouchableOpacity
@@ -158,71 +163,51 @@ export default function OrdersListScreenModern({
         style={styles.card}
         onPress={() => onOpenOrder?.({ id: item.id || item.order_id, ...item })}
       >
-        <View style={styles.cardAccent} />
-
-        <View style={styles.cardContent}>
-          <View style={styles.leftCol}>
-            <View style={styles.orderNumPill}>
-              <Text style={styles.orderNumPrefix}>№</Text>
-              <Text style={styles.orderNumText}>{item.orderSeq || item.orderNo || item.id}</Text>
-            </View>
-
+        <View style={styles.cardRow}>
+          {/* Левый блок: время выдачи + статус */}
+          <View style={styles.timeBox}>
+            <Text style={styles.timeBig}>{primaryTime}</Text>
+            <Text style={styles.timeCaption}>{timeCaption}</Text>
             <View
               style={[
-                styles.statusBadge,
-                {
-                  backgroundColor: status.bg,
-                  borderColor: status.border,
-                },
+                styles.statusPill,
+                { backgroundColor: status.bg, borderColor: status.border },
               ]}
             >
-              <Text style={[styles.statusBadgeText, { color: status.color }]}>
+              <Text style={[styles.statusPillText, { color: status.color }]} numberOfLines={1}>
                 {status.text}
               </Text>
             </View>
-
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>{formatTimeOnly(item.createdAt) || '—'}</Text>
-              {formatTimeOnly(item.scheduledAt) && (
-                <>
-                  <View style={styles.metaDot} />
-                  <Text style={styles.metaText}>{formatTimeOnly(item.scheduledAt)}</Text>
-                </>
-              )}
-            </View>
           </View>
 
-          <View style={styles.centerCol}>
-            <Text style={styles.customerText} numberOfLines={1}>
-              {item.customer || '—'}
-            </Text>
+          {/* Центр: №/точка, адрес, клиент */}
+          <View style={styles.infoCol}>
+            <View style={styles.metaTop}>
+              <Text style={styles.metaNum}>№{orderNo}</Text>
+              <Text style={styles.metaOutlet} numberOfLines={1}> · {item.outlet || outletName}</Text>
+            </View>
 
             <Text style={styles.address} numberOfLines={2}>
               {item.address || '—'}
             </Text>
 
-            <View style={styles.bottomRow}>
-              <View style={styles.outletChip}>
-                <Text style={styles.outletChipText}>{item.outlet || outletName}</Text>
-              </View>
-
-              <View style={styles.priceChip}>
-                <Text style={styles.priceChipText}>{formatMoney(item.amountTotal)} €</Text>
-              </View>
-            </View>
+            <Text style={styles.customerLine} numberOfLines={1}>
+              {item.customer || '—'}
+              {scheduled && created ? `  ·  принят ${created}` : ''}
+            </Text>
           </View>
 
+          {/* Право: сумма + кнопка «взять» */}
           <View style={styles.rightCol}>
+            <Text style={styles.price}>{formatMoney(item.amountTotal)} €</Text>
             <TouchableOpacity
               activeOpacity={0.85}
-              style={styles.actionBtn}
+              style={styles.takeBtn}
               onPress={() => onActionPress?.(item)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <PlusCircle size={18} color={COLORS.primary} strokeWidth={2.2} />
+              <PlusCircle size={20} color={COLORS.onPrimary} strokeWidth={2.4} />
             </TouchableOpacity>
-
-            <ChevronRight size={18} color={COLORS.muted} strokeWidth={2.2} />
           </View>
         </View>
       </TouchableOpacity>
@@ -441,159 +426,107 @@ const makeStyles = (COLORS) => StyleSheet.create({
     elevation: 10,
   },
 
-  cardAccent: {
-    position: 'absolute',
-    top: 14,
-    bottom: 14,
-    left: 0,
-    width: 4,
-    borderTopRightRadius: 4,
-    borderBottomRightRadius: 4,
-    backgroundColor: COLORS.primary,
-  },
-
-  cardContent: {
+  cardRow: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 16,
-    paddingLeft: 18,
+    alignItems: 'stretch',
+    gap: 13,
+    padding: 14,
   },
 
-  leftCol: {
-    width: 92,
+  timeBox: {
+    minWidth: 74,
+    alignItems: 'center',
     justifyContent: 'center',
-  },
-
-  orderNumPill: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    alignSelf: 'flex-start',
     backgroundColor: COLORS.softBlue,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
     borderWidth: 1,
     borderColor: COLORS.softBlueBorder,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
   },
 
-  orderNumPrefix: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: COLORS.primary,
-    marginRight: 6,
+  timeBig: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.text,
+    lineHeight: 22,
   },
 
-  orderNumText: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: COLORS.primary,
+  timeCaption: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginTop: 3,
   },
 
-  statusBadge: {
+  statusPill: {
     marginTop: 8,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderWidth: 1,
   },
 
-  statusBadgeText: {
-    fontSize: 11,
-    fontWeight: '900',
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
   },
 
-  metaRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-
-  metaText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.muted,
-  },
-
-  metaDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(143,163,184,0.5)',
-    marginHorizontal: 8,
-  },
-
-  centerCol: {
+  infoCol: {
     flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
   },
 
-  customerText: {
-    fontSize: 13,
-    fontWeight: '900',
+  metaTop: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+
+  metaNum: {
+    fontSize: 11,
+    fontWeight: '800',
     color: COLORS.primary,
-    marginBottom: 5,
+  },
+
+  metaOutlet: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.muted,
   },
 
   address: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
     color: COLORS.text,
-    lineHeight: 18,
+    lineHeight: 20,
+    marginTop: 4,
   },
 
-  bottomRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-
-  outletChip: {
-    backgroundColor: COLORS.softGray,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: COLORS.line,
-  },
-
-  outletChipText: {
+  customerLine: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     color: COLORS.muted,
-  },
-
-  priceChip: {
-    backgroundColor: COLORS.softBlue,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: COLORS.softBlueBorder,
-  },
-
-  priceChipText: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: COLORS.primary,
+    marginTop: 4,
   },
 
   rightCol: {
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    paddingVertical: 2,
   },
 
-  actionBtn: {
+  price: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+
+  takeBtn: {
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: COLORS.softBlue,
-    borderWidth: 1,
-    borderColor: COLORS.softBlueBorder,
+    backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
