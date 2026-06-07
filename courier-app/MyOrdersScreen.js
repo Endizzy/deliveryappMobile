@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronRight, CheckCircle2, Clock } from 'lucide-react-native';
 import { useTheme } from './theme';
+import { useT } from './i18n';
 
 // Форматирование только времени (например: "14:16")
 function formatTimeOnly(dateStr) {
@@ -37,6 +38,7 @@ export default function MyOrdersScreen({
   onCompleteOrder,
 }) {
   const { colors: COLORS } = useTheme();
+  const { t } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const { active, completed } = useMemo(() => {
@@ -50,16 +52,16 @@ export default function MyOrdersScreen({
 
   const handleCompleteOrder = (orderId, orderNumber) => {
     Alert.alert(
-      'Закрыть заказ',
-      `Вы уверены что хотите закрыть заказ №${orderNumber}?`,
+      t('myOrders.closeTitle'),
+      t('myOrders.closeBody', { number: orderNumber }),
       [
         {
-          text: 'Отмена',
+          text: t('common.cancel'),
           onPress: () => { },
           style: 'cancel',
         },
         {
-          text: 'Да, готово',
+          text: t('myOrders.yesDone'),
           onPress: () => onCompleteOrder?.(orderId),
           style: 'destructive',
         },
@@ -132,7 +134,7 @@ export default function MyOrdersScreen({
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <CheckCircle2 size={18} color={COLORS.success} strokeWidth={2.2} />
-              <Text style={styles.completeBtnText}>Готово</Text>
+              <Text style={styles.completeBtnText}>{t('myOrders.done')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -157,8 +159,8 @@ export default function MyOrdersScreen({
       <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>МОИ ЗАКАЗЫ</Text>
-        <Text style={styles.headerSubtitle}>Активные и завершённые заказы курьера</Text>
+        <Text style={styles.headerTitle}>{t('myOrders.title')}</Text>
+        <Text style={styles.headerSubtitle}>{t('myOrders.subtitle')}</Text>
       </View>
 
       <ScrollView
@@ -171,15 +173,15 @@ export default function MyOrdersScreen({
             <View style={styles.emptyIconWrap}>
               <Clock size={42} color={COLORS.muted} strokeWidth={1.8} />
             </View>
-            <Text style={styles.emptyTitle}>Нет заказов</Text>
-            <Text style={styles.emptyText}>Нажимайте "ВЗЯТЬ" на странице заказов</Text>
+            <Text style={styles.emptyTitle}>{t('myOrders.empty')}</Text>
+            <Text style={styles.emptyText}>{t('myOrders.emptyHint')}</Text>
           </View>
         ) : (
           <>
             {active.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>В работе</Text>
+                  <Text style={styles.sectionTitle}>{t('myOrders.inWork')}</Text>
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>{active.length}</Text>
                   </View>
@@ -199,7 +201,7 @@ export default function MyOrdersScreen({
               <View style={[styles.section, styles.sectionCompleted]}>
                 <View style={styles.sectionHeader}>
                   <Text style={[styles.sectionTitle, styles.sectionTitleCompleted]}>
-                    Завершено
+                    {t('myOrders.completed')}
                   </Text>
                   <View style={[styles.badge, styles.badgeCompleted]}>
                     <Text style={[styles.badgeText, styles.badgeTextCompleted]}>

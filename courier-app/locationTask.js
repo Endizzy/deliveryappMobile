@@ -1,4 +1,5 @@
 import * as TaskManager from 'expo-task-manager';
+import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_LOCATION } from './constants';
 
@@ -34,7 +35,20 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
 
         const onShift = await AsyncStorage.getItem('onShift'); // "1" | null
 
-        if (!courierId || onShift !== '1') return;
+        // Fail-closed приватность: если смена НЕ активна — ничего не отправляем
+        // и принудительно глушим фоновую подписку, чтобы ОС не «воскрешала» её
+        // после остановки смены или гибели процесса приложения.
+        if (onShift !== '1') {
+            try {
+                const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
+                if (started) await Location.stopLocationUpdatesAsync(TASK_NAME);
+            } catch (e) {
+                // ignore
+            }
+            return;
+        }
+
+        if (!courierId) return;
 
         const body = {
             type: 'location',

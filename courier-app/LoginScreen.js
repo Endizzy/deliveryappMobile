@@ -17,6 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import LottieView from 'lottie-react-native';
 import CourierAnimation from './assets/Lotties/Food Courier.json';
 import { useTheme } from './theme';
+import { useT } from './i18n';
 
 // Keyboard padding через Animated.Value — без ре-рендера LoginScreen
 function useKeyboardPadding() {
@@ -95,6 +96,7 @@ function FocusableInput({ label, ...props }) {
 
 export default function LoginScreen({ onLoginSuccess }) {
     const { colors: COLORS } = useTheme();
+    const { t } = useT();
     const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
     const [login, setLogin] = useState('');
@@ -104,7 +106,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
     const handleSubmit = async () => {
         if (!login || !password) {
-            Alert.alert('Ошибка', 'Пожалуйста, введите логин и пароль');
+            Alert.alert(t('common.error'), t('login.errEnterCredentials'));
             return;
         }
 
@@ -130,11 +132,11 @@ export default function LoginScreen({ onLoginSuccess }) {
             }
 
             if (!res.ok) {
-                Alert.alert('Ошибка', data?.error || data?.message || 'Ошибка входа');
+                Alert.alert(t('common.error'), data?.error || data?.message || t('login.errLogin'));
             } else {
                 const token = data.token;
                 if (!token) {
-                    Alert.alert('Ошибка', 'Сервер не вернул токен');
+                    Alert.alert(t('common.error'), t('login.errNoToken'));
                 } else {
                     await AsyncStorage.setItem('authToken', token);
                     onLoginSuccess && onLoginSuccess();
@@ -142,7 +144,7 @@ export default function LoginScreen({ onLoginSuccess }) {
             }
         } catch (err) {
             console.error('Ошибка сети или парсинга:', err);
-            Alert.alert('Ошибка сети', err.message || 'Попробуйте позже');
+            Alert.alert(t('login.errNetwork'), err.message || t('login.errTryLater'));
         } finally {
             setLoading(false);
         }
@@ -170,15 +172,15 @@ export default function LoginScreen({ onLoginSuccess }) {
                         />
                     </View>
 
-                    <Text style={styles.title}>Авторизация</Text>
+                    <Text style={styles.title}>{t('login.title')}</Text>
                     <Text style={styles.subtitle}>
-                        Войдите в аккаунт курьера, чтобы продолжить
+                        {t('login.subtitle')}
                     </Text>
 
                     <View style={styles.card}>
                         <FocusableInput
-                            label="Логин"
-                            placeholder="Email или телефон"
+                            label={t('login.loginLabel')}
+                            placeholder={t('login.loginPlaceholder')}
                             placeholderTextColor={COLORS.placeholder}
                             value={login}
                             onChangeText={setLogin}
@@ -192,8 +194,8 @@ export default function LoginScreen({ onLoginSuccess }) {
                         />
 
                         <FocusableInput
-                            label="Пароль"
-                            placeholder="Введите пароль"
+                            label={t('login.passwordLabel')}
+                            placeholder={t('login.passwordPlaceholder')}
                             placeholderTextColor={COLORS.placeholder}
                             value={password}
                             onChangeText={setPassword}
@@ -215,7 +217,7 @@ export default function LoginScreen({ onLoginSuccess }) {
                             activeOpacity={0.85}
                         >
                             <Text style={styles.buttonText}>
-                                {loading ? 'Выполняется...' : 'Войти'}
+                                {loading ? t('login.signingIn') : t('login.signIn')}
                             </Text>
                         </TouchableOpacity>
                     </View>

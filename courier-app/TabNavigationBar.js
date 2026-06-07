@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Menu as MenuIcon, List as ListIcon, User as UserIcon } from 'lucide-react-native';
 import { useTheme } from './theme';
+import { useT } from './i18n';
 
 const TABS = {
   MENU: 'MENU',
@@ -13,6 +14,7 @@ const TABS = {
 const TabNavigationBar = ({ activeTab, onTabChange }) => {
   const insets = useSafeAreaInsets();
   const { colors: COLORS } = useTheme();
+  const { t } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const bottomInset = Math.max(insets.bottom, 8);
@@ -45,9 +47,9 @@ const TabNavigationBar = ({ activeTab, onTabChange }) => {
   return (
     <View style={[styles.outerWrapper, { paddingBottom: bottomInset }]}>
       <View style={styles.tabBar}>
-        {renderTab(TABS.MENU, 'МЕНЮ', MenuIcon)}
-        {renderTab(TABS.ALL, 'ВСЕ', ListIcon)}
-        {renderTab(TABS.MY, 'МОИ', UserIcon)}
+        {renderTab(TABS.MENU, t('tabs.menu'), MenuIcon)}
+        {renderTab(TABS.ALL, t('tabs.all'), ListIcon)}
+        {renderTab(TABS.MY, t('tabs.my'), UserIcon)}
       </View>
     </View>
   );

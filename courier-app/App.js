@@ -5,6 +5,7 @@ import CourierShiftScreen from './CourierShiftScreen';
 import LoginScreen from './LoginScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './theme';
+import { LanguageProvider } from './i18n';
 
 export default function App() {
   const [isAuth, setIsAuth] = useState(null); // null — состояние загрузки
@@ -27,15 +28,17 @@ export default function App() {
 
   return (
       // <- ThemeProvider и SafeAreaProvider должны быть НАД всем UI
-      <ThemeProvider>
-        <SafeAreaProvider>
-          {!isAuth ? (
-              <LoginScreen onLoginSuccess={() => setIsAuth(true)} />
-          ) : (
-              <CourierShiftScreen onLogout={() => setIsAuth(false)} />
-          )}
-        </SafeAreaProvider>
-      </ThemeProvider>
+      <LanguageProvider>
+        <ThemeProvider>
+          <SafeAreaProvider>
+            {!isAuth ? (
+                <LoginScreen onLoginSuccess={() => setIsAuth(true)} />
+            ) : (
+                <CourierShiftScreen onLogout={() => setIsAuth(false)} />
+            )}
+          </SafeAreaProvider>
+        </ThemeProvider>
+      </LanguageProvider>
   );
 }
 

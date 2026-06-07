@@ -1,4 +1,4 @@
-// OrdersListScreenModern.js
+
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -15,6 +15,7 @@ import { RotateCw, ChevronLeft, PlusCircle, PackageOpen } from 'lucide-react-nat
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './theme';
+import { useT } from './i18n';
 
 function formatTimeOnly(dateStr) {
   if (!dateStr) return null;
@@ -33,12 +34,12 @@ function formatMoney(v) {
   return n.toFixed(2);
 }
 
-function statusLabel(status) {
+function statusLabel(status, t) {
   const s = (status || '').toLowerCase();
 
   if (s === 'new') {
     return {
-      text: 'Новый',
+      text: t('ordersList.statusNew'),
       color: '#2F8CFF',
       bg: 'rgba(47, 140, 255, 0.12)',
       border: 'rgba(47, 140, 255, 0.22)',
@@ -47,7 +48,7 @@ function statusLabel(status) {
 
   if (s === 'ready') {
     return {
-      text: 'Готов',
+      text: t('ordersList.statusReady'),
       color: '#4ADE80',
       bg: 'rgba(74, 222, 128, 0.12)',
       border: 'rgba(74, 222, 128, 0.20)',
@@ -56,7 +57,7 @@ function statusLabel(status) {
 
   if (s === 'enroute') {
     return {
-      text: 'В пути',
+      text: t('ordersList.statusEnroute'),
       color: '#FBBF24',
       bg: 'rgba(251, 191, 36, 0.12)',
       border: 'rgba(251, 191, 36, 0.20)',
@@ -65,7 +66,7 @@ function statusLabel(status) {
 
   if (s === 'cancelled') {
     return {
-      text: 'Отменён',
+      text: t('ordersList.statusCancelled'),
       color: '#FF7B7B',
       bg: 'rgba(255, 123, 123, 0.12)',
       border: 'rgba(255, 123, 123, 0.20)',
@@ -101,6 +102,7 @@ export default function OrdersListScreenModern({
   onBack,
 }) {
   const { colors: COLORS } = useTheme();
+  const { t } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const [fetchedOrders, setFetchedOrders] = useState([]);
@@ -150,11 +152,11 @@ export default function OrdersListScreenModern({
   const Wrapper = useSafeArea ? SafeAreaView : View;
 
   const renderItem = ({ item }) => {
-    const status = statusLabel(item.status);
+    const status = statusLabel(item.status, t);
     const created = formatTimeOnly(item.createdAt);
     const scheduled = formatTimeOnly(item.scheduledAt);
     const primaryTime = scheduled || created || '—';
-    const timeCaption = scheduled ? 'выдача' : 'принят';
+    const timeCaption = scheduled ? t('ordersList.captionDelivery') : t('ordersList.captionAccepted');
     const orderNo = item.orderSeq || item.orderNo || item.id;
 
     return (
@@ -193,7 +195,7 @@ export default function OrdersListScreenModern({
 
             <Text style={styles.customerLine} numberOfLines={1}>
               {item.customer || '—'}
-              {scheduled && created ? `  ·  принят ${created}` : ''}
+              {scheduled && created ? `  ·  ${t('ordersList.acceptedAt', { time: created })}` : ''}
             </Text>
           </View>
 
@@ -237,7 +239,7 @@ export default function OrdersListScreenModern({
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>{companyTitle}</Text>
           <Text style={styles.headerSubtitle}>
-            id {companyId} • {outlet?.id === 'all' ? 'Все точки' : outlet?.name ?? outletName}
+            id {companyId} • {outlet?.id === 'all' ? t('allOrders.allOutlets') : outlet?.name ?? outletName}
             {isLiveData ? '  ●' : ''}
           </Text>
         </View>
@@ -248,7 +250,9 @@ export default function OrdersListScreenModern({
       <View style={styles.sheet}>
         <View style={styles.sectionTop}>
           <Text style={styles.sectionTitle}>
-            {outlet?.id === 'all' ? 'Все заказы' : `${outlet?.name ?? outletName} — активные`}
+            {outlet?.id === 'all'
+              ? t('ordersList.allOrders')
+              : `${outlet?.name ?? outletName} — ${t('ordersList.activeSuffix')}`}
           </Text>
 
           <View style={styles.counterPill}>
@@ -259,13 +263,13 @@ export default function OrdersListScreenModern({
         {loading ? (
           <View style={styles.centerState}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.stateText}>Загрузка заказов...</Text>
+            <Text style={styles.stateText}>{t('ordersList.loading')}</Text>
           </View>
         ) : error ? (
           <View style={styles.centerState}>
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity onPress={handleRefresh} style={styles.retryBtn} activeOpacity={0.85}>
-              <Text style={styles.retryBtnText}>Повторить</Text>
+              <Text style={styles.retryBtnText}>{t('common.retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -282,9 +286,9 @@ export default function OrdersListScreenModern({
                 <View style={styles.emptyIconWrap}>
                   <PackageOpen size={42} color={COLORS.muted} strokeWidth={1.8} />
                 </View>
-                <Text style={styles.emptyTitle}>Нет доступных заказов</Text>
+                <Text style={styles.emptyTitle}>{t('ordersList.empty')}</Text>
                 <Text style={styles.emptyText}>
-                  Когда появятся новые заказы, они будут отображаться здесь
+                  {t('ordersList.emptyHint')}
                 </Text>
               </View>
             }

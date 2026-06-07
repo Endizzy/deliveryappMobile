@@ -10,6 +10,7 @@ import {
     ActivityIndicator,
     Linking,
     StatusBar,
+    AppState,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -29,6 +30,8 @@ import { useOrdersWebSocket } from './useOrdersWebSocket';
 import SettingsModal from './components/SettingsModal';
 import { Settings } from 'lucide-react-native';
 import { useTheme } from './theme';
+import { useT } from './i18n';
+import { initOrderSound, setOrderSoundEnabled } from './notificationSound';
 
 const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
@@ -66,6 +69,7 @@ function getOutletCounts(orders) {
 
 export default function CourierShiftScreen({ onLogout }) {
     const { colors: COLORS, themeName, setTheme } = useTheme();
+    const { t, lang, setLang } = useT();
     const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
     const [unit, setUnit] = useState(null);
@@ -74,7 +78,6 @@ export default function CourierShiftScreen({ onLogout }) {
 
     // ── Settings state ──────────────────────────────────────────────────────
     const [settingsVisible, setSettingsVisible] = useState(false);
-    const [language, setLanguage] = useState('ru');
     const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     // ── Tab / navigation state ──────────────────────────────────────────────
@@ -145,13 +148,56 @@ export default function CourierShiftScreen({ onLogout }) {
         })();
     }, []);
 
+    // ── остановка фоновой геолокации ──────────────────
+    const stopTracking = async () => {
+        try { await AsyncStorage.removeItem('onShift'); } catch { }
+        try {
+            const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
+            if (started) await Location.stopLocationUpdatesAsync(TASK_NAME);
+        } catch { }
+    };
+
+    // ── Сверка состояния при запуске и возврате в приложение ─────────────────
+    // Если смена не активна, но подписка ОС всё ещё «висит» (воскрешена ОС),
+    // принудительно её отключаем. Так геолокация не может идти без активной смены.
+    useEffect(() => {
+        const reconcile = async () => {
+            try {
+                const onShift = await AsyncStorage.getItem('onShift');
+                if (onShift === '1') {
+                    setStatus('online');
+                    return;
+                }
+                setStatus('offline');
+                let started = false;
+                try { started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME); } catch { }
+                if (started) {
+                    try { await Location.stopLocationUpdatesAsync(TASK_NAME); } catch { }
+                }
+            } catch { }
+        };
+
+        reconcile();
+        const sub = AppState.addEventListener('change', (s) => {
+            if (s === 'active') reconcile();
+        });
+        return () => sub.remove();
+    }, []);
+
+    // ── Загрузка сохранённой настройки звука оповещений ──────────────────────
+    useEffect(() => {
+        (async () => {
+            try {
+                const v = await initOrderSound();
+                setNotificationSoundEnabled(v);
+            } catch { }
+        })();
+    }, []);
+
     // ── Выход ───────────────────────────────────────────────────────────────
     const handleExit = async () => {
         try {
-            try {
-                const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
-                if (isRegistered) await Location.stopLocationUpdatesAsync(TASK_NAME);
-            } catch { }
+            await stopTracking();
 
             await AsyncStorage.removeItem(TOKEN_KEY);
             await AsyncStorage.removeItem(UNIT_KEY);
@@ -161,7 +207,7 @@ export default function CourierShiftScreen({ onLogout }) {
 
             onLogout?.();
         } catch {
-            Alert.alert('Ошибка', 'Не удалось выйти. Попробуйте ещё раз.');
+            Alert.alert(t('common.error'), t('shift.errLogoutFail'));
         }
     };
 
@@ -169,12 +215,12 @@ export default function CourierShiftScreen({ onLogout }) {
         let fg = await Location.getForegroundPermissionsAsync();
         if (fg.status !== 'granted') {
             fg = await Location.requestForegroundPermissionsAsync();
-            if (fg.status !== 'granted') throw new Error('Нужны права на геолокацию');
+            if (fg.status !== 'granted') throw new Error(t('shift.permFg'));
         }
         let bg = await Location.getBackgroundPermissionsAsync();
         if (bg.status !== 'granted') {
             bg = await Location.requestBackgroundPermissionsAsync();
-            if (bg.status !== 'granted') throw new Error('Нужны права на геолокацию в фоне');
+            if (bg.status !== 'granted') throw new Error(t('shift.permBg'));
         }
     };
 
@@ -197,20 +243,27 @@ export default function CourierShiftScreen({ onLogout }) {
                     pausesUpdatesAutomatically: false,
                     showsBackgroundLocationIndicator: true,
                     foregroundService: {
-                        notificationTitle: FOREGROUND_SERVICE.notificationTitle,
-                        notificationBody: FOREGROUND_SERVICE.notificationBody,
+                        notificationTitle: t('shift.fgTitle'),
+                        notificationBody: t('shift.fgBody'),
                         notificationColor: '#000000',
                     },
                 });
             }
             setStatus('online');
         } catch (e) {
-            Alert.alert('Ошибка', e.message || 'Не удалось запустить смену');
+            Alert.alert(t('common.error'), e.message || t('shift.errStartFail'));
         }
     };
 
     const stopShift = async () => {
         try {
+            // 1) Сразу глушим смену и фоновую подписку (fail-closed).
+            //    Делаем это ДО прощального пинга, чтобы геолокация точно прекратилась,
+            //    даже если что-то ниже упадёт.
+            await stopTracking();
+            setStatus('offline');
+
+            // 2) Прощальный пинг off_shift — чтобы клиент убрал курьера с карты.
             try {
                 const courierId = unit?.unitId;
                 let pos = null;
@@ -234,13 +287,8 @@ export default function CourierShiftScreen({ onLogout }) {
                     }).catch(() => { });
                 }
             } catch { }
-
-            await AsyncStorage.removeItem('onShift');
-            const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
-            if (isRegistered) await Location.stopLocationUpdatesAsync(TASK_NAME);
-            setStatus('offline');
         } catch {
-            Alert.alert('Ошибка', 'Не удалось остановить смену');
+            Alert.alert(t('common.error'), t('shift.errStopFail'));
         }
     };
 
@@ -253,14 +301,14 @@ export default function CourierShiftScreen({ onLogout }) {
                 <View style={styles.bgCircleBottom} pointerEvents="none" />
 
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#2F8CFF" />
-                    <Text style={styles.loadingText}>Загрузка данных курьера...</Text>
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>{t('shift.loading')}</Text>
                 </View>
             </SafeAreaView>
         );
     }
 
-    const nickname = unit?.unitNickname ?? 'Курьер';
+    const nickname = unit?.unitNickname ?? t('shift.courier');
     const idText = unit?.unitId ? String(unit.unitId) : '—';
     const initial = nickname.length > 0 ? nickname[0].toUpperCase() : '?';
 
@@ -276,7 +324,7 @@ export default function CourierShiftScreen({ onLogout }) {
 
                             <View style={styles.infoBlock}>
                                 <Text style={styles.nickname}>{nickname}</Text>
-                                <Text style={styles.unitId}>ID: {idText}</Text>
+                                <Text style={styles.unitId}>{t('shift.idLabel')}: {idText}</Text>
 
                                 <View
                                     style={[
@@ -290,7 +338,7 @@ export default function CourierShiftScreen({ onLogout }) {
                                             connected ? styles.wsOnline : styles.wsOffline,
                                         ]}
                                     >
-                                        {connected ? '● Online' : '○ Connecting...'}
+                                        {connected ? t('shift.wsOnline') : t('shift.wsConnecting')}
                                     </Text>
                                 </View>
                             </View>
@@ -310,7 +358,7 @@ export default function CourierShiftScreen({ onLogout }) {
                                             status === 'online' ? styles.online : styles.offline,
                                         ]}
                                     >
-                                        {status === 'online' ? 'ON SHIFT' : 'OFFLINE'}
+                                        {status === 'online' ? t('shift.onShift') : t('shift.offline')}
                                     </Text>
                                 </View>
 
@@ -325,22 +373,22 @@ export default function CourierShiftScreen({ onLogout }) {
                         </View>
 
                         <View style={styles.sectionCard}>
-                            <Text style={styles.sectionTitle}>Управление сменой</Text>
+                            <Text style={styles.sectionTitle}>{t('shift.manageTitle')}</Text>
                             <Text style={styles.sectionSubtitle}>
-                                Включайте и выключайте рабочую смену, управляйте статусом и выходом из аккаунта.
+                                {t('shift.manageSubtitle')}
                             </Text>
 
                             <View style={styles.controls}>
                                 <TouchableOpacity style={styles.primaryButton} onPress={startShift} activeOpacity={0.85}>
-                                    <Text style={styles.primaryButtonText}>Начать смену</Text>
+                                    <Text style={styles.primaryButtonText}>{t('shift.start')}</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity style={styles.ghostButton} onPress={stopShift} activeOpacity={0.85}>
-                                    <Text style={styles.ghostButtonText}>Остановить смену</Text>
+                                    <Text style={styles.ghostButtonText}>{t('shift.stop')}</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.85}>
-                                    <Text style={styles.exitButtonText}>Выйти из аккаунта</Text>
+                                    <Text style={styles.exitButtonText}>{t('shift.logout')}</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -360,9 +408,9 @@ export default function CourierShiftScreen({ onLogout }) {
                                         try {
                                             await assignOrder(order.id);
                                             setSelectedOrder(null);
-                                            Alert.alert('Успешно', 'Заказ добавлен в ваши заказы');
+                                            Alert.alert(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
                                         } catch (e) {
-                                            Alert.alert('Ошибка', e.message);
+                                            Alert.alert(t('common.error'), e.message);
                                         }
                                     })();
                                 }}
@@ -403,18 +451,18 @@ export default function CourierShiftScreen({ onLogout }) {
                         }}
                         onRemoveOrder={(orderId) => {
                             Alert.alert(
-                                'Удалить заказ?',
-                                'Заказ будет отказан и станет доступным для других курьеров.',
+                                t('shift.removeTitle'),
+                                t('shift.removeBody'),
                                 [
-                                    { text: 'Отмена', style: 'cancel' },
+                                    { text: t('common.cancel'), style: 'cancel' },
                                     {
-                                        text: 'Удалить',
+                                        text: t('common.delete'),
                                         style: 'destructive',
                                         onPress: async () => {
                                             try {
                                                 await releaseOrder(orderId);
                                             } catch (e) {
-                                                Alert.alert('Ошибка', e.message);
+                                                Alert.alert(t('common.error'), e.message);
                                             }
                                         },
                                     },
@@ -441,7 +489,7 @@ export default function CourierShiftScreen({ onLogout }) {
     return (
         // <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
         <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right']}>
-            <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+            <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
             <View style={styles.bgCircleTop} pointerEvents="none" />
             <View style={styles.bgCircleBottom} pointerEvents="none" />
 
@@ -454,12 +502,15 @@ export default function CourierShiftScreen({ onLogout }) {
             <SettingsModal
                 visible={settingsVisible}
                 onClose={() => setSettingsVisible(false)}
-                currentLanguage={language}
+                currentLanguage={lang}
                 currentTheme={themeName}
                 notificationSoundEnabled={notificationSoundEnabled}
-                onLanguageChange={(lang) => setLanguage(lang)}
+                onLanguageChange={(l) => setLang(l)}
                 onThemeChange={(thm) => setTheme(thm)}
-                onNotificationSoundChange={(enabled) => setNotificationSoundEnabled(enabled)}
+                onNotificationSoundChange={(enabled) => {
+                    setNotificationSoundEnabled(enabled);
+                    setOrderSoundEnabled(enabled);
+                }}
             />
         </SafeAreaView>
     );

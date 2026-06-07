@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
+import { useT } from './i18n';
 
 // Список точек выдачи — serverName должен совпадать со значением поля outlet в заказе
 const OUTLETS = [
@@ -26,6 +27,7 @@ const AllOrdersScreen = ({
   outletCounts = {},
 }) => {
   const { colors: COLORS } = useTheme();
+  const { t } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const getCount = (item) => {
@@ -57,18 +59,18 @@ const AllOrdersScreen = ({
                 style={[styles.cardTitle, item.isAll && styles.cardTitleAll]}
                 numberOfLines={1}
               >
-                {item.name}
+                {item.isAll ? t('allOrders.allOutlets') : item.name}
               </Text>
 
               {item.isAll && (
                 <View style={styles.allPill}>
-                  <Text style={styles.allPillText}>ВСЕ</Text>
+                  <Text style={styles.allPillText}>{t('allOrders.allPill')}</Text>
                 </View>
               )}
             </View>
 
             <Text style={styles.cardSubtitle}>
-              {item.isAll ? 'Все активные точки выдачи' : 'Открыть список заказов точки'}
+              {item.isAll ? t('allOrders.allActive') : t('allOrders.openList')}
             </Text>
           </View>
 
@@ -90,8 +92,8 @@ const AllOrdersScreen = ({
       <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>ЗАКАЗЫ</Text>
-        <Text style={styles.headerSubtitle}>Выберите точку выдачи</Text>
+        <Text style={styles.headerTitle}>{t('allOrders.title')}</Text>
+        <Text style={styles.headerSubtitle}>{t('allOrders.subtitle')}</Text>
       </View>
 
       <View style={styles.content}>

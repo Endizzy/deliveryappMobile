@@ -1,5 +1,8 @@
 import { registerRootComponent } from 'expo';
 
+// Регистрируем фоновую задачу геолокации как можно раньше (в т.ч. при headless-
+// запуске задачи самой ОС), чтобы её защита fail-closed всегда была активна.
+import './locationTask';
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

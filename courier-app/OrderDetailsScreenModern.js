@@ -14,6 +14,9 @@ import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
+import { useT } from './i18n';
+
+const LOCALES = { ru: 'ru-RU', en: 'en-GB', lv: 'lv-LV' };
 import {
   ChevronLeft,
   Phone,
@@ -41,14 +44,14 @@ function safeText(v, fallback = '—') {
   return s.length ? s : fallback;
 }
 
-function formatDateTime(dateStr) {
+function formatDateTime(dateStr, locale = 'ru-RU') {
   if (!dateStr) return '—';
   try {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return '—';
 
     const day = date.getDate();
-    const month = new Intl.DateTimeFormat('ru-RU', { month: 'long' }).format(date);
+    const month = new Intl.DateTimeFormat(locale, { month: 'long' }).format(date);
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
 
@@ -76,19 +79,19 @@ function parseItems(itemsValue) {
   }
 }
 
-function paymentLabel(method) {
+function paymentLabel(method, t) {
   const m = (method || '').toLowerCase();
-  if (m.includes('cash') || m.includes('нал')) return 'Наличные';
-  if (m.includes('card') || m.includes('карт')) return 'Карта';
+  if (m.includes('cash') || m.includes('нал')) return t('orderDetails.cash');
+  if (m.includes('card') || m.includes('карт')) return t('orderDetails.card');
   return safeText(method);
 }
 
-function statusLabel(status) {
+function statusLabel(status, t) {
   const s = (status || '').toLowerCase();
-  if (s === 'new') return { text: 'Новый', tone: 'info' };
-  if (s === 'ready') return { text: 'Готов', tone: 'success' };
-  if (s === 'active') return { text: 'В работе', tone: 'info' };
-  if (s === 'cancelled') return { text: 'Отменён', tone: 'danger' };
+  if (s === 'new') return { text: t('orderDetails.statusNew'), tone: 'info' };
+  if (s === 'ready') return { text: t('orderDetails.statusReady'), tone: 'success' };
+  if (s === 'active') return { text: t('orderDetails.statusActive'), tone: 'info' };
+  if (s === 'cancelled') return { text: t('orderDetails.statusCancelled'), tone: 'danger' };
   return { text: safeText(status), tone: 'neutral' };
 }
 
@@ -133,6 +136,8 @@ export default function OrderDetailsScreenModern({
   onCall,
 }) {
   const { colors: COLORS } = useTheme();
+  const { t, lang } = useT();
+  const locale = LOCALES[lang] || LOCALES.ru;
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const [details, setDetails] = useState(order && (order.items || order.items_json) ? order : null);
@@ -156,11 +161,11 @@ export default function OrderDetailsScreenModern({
         });
 
         const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Ошибка загрузки заказа');
+        if (!data.ok) throw new Error(data.error || t('orderDetails.loading'));
 
         if (!ignore) setDetails(data.item);
       } catch (e) {
-        if (!ignore) setError(e?.message || 'Ошибка сети');
+        if (!ignore) setError(e?.message || t('login.errNetwork'));
       } finally {
         if (!ignore) setLoading(false);
       }
@@ -175,7 +180,7 @@ export default function OrderDetailsScreenModern({
   const o = details || order || {};
   const items = useMemo(() => parseItems(o.items ?? o.items_json), [o.items, o.items_json]);
 
-  const st = statusLabel(o.status);
+  const st = statusLabel(o.status, t);
   const stTone = toneStyles(st.tone);
 
   const titleNumber =
@@ -183,8 +188,8 @@ export default function OrderDetailsScreenModern({
       o.orderNo ? String(o.orderNo) :
         o.id ? `#${o.id}` : '—';
 
-  const createdAt = formatDateTime(o.createdAt);
-  const deliverAt = formatDateTime(o.scheduledAt);
+  const createdAt = formatDateTime(o.createdAt, locale);
+  const deliverAt = formatDateTime(o.scheduledAt, locale);
 
   const customerName = safeText(o.customer);
   const phone = safeText(o.phone, '');
@@ -218,7 +223,7 @@ export default function OrderDetailsScreenModern({
         <View style={styles.bgCircleBottom} pointerEvents="none" />
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.stateText}>Загрузка заказа...</Text>
+          <Text style={styles.stateText}>{t('orderDetails.loading')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -241,7 +246,7 @@ export default function OrderDetailsScreenModern({
             style={styles.retryBtn}
             activeOpacity={0.85}
           >
-            <Text style={styles.retryBtnText}>Повторить</Text>
+            <Text style={styles.retryBtnText}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -250,7 +255,7 @@ export default function OrderDetailsScreenModern({
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#010B13" />
+      <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
 
       <View style={styles.bgCircleTop} pointerEvents="none" />
       <View style={styles.bgCircleBottom} pointerEvents="none" />
@@ -266,7 +271,7 @@ export default function OrderDetailsScreenModern({
         </TouchableOpacity>
 
         <View style={styles.topCenter}>
-          <Text style={styles.topTitle}>ЗАКАЗ {titleNumber}</Text>
+          <Text style={styles.topTitle}>{t('orderDetails.order')} {titleNumber}</Text>
           <View style={[styles.statusPill, { backgroundColor: stTone.bg, borderColor: stTone.bd }]}>
             <Text style={[styles.statusText, { color: stTone.fg }]}>{st.text}</Text>
           </View>
@@ -284,20 +289,20 @@ export default function OrderDetailsScreenModern({
           <View style={styles.cardAccent} />
           <View style={styles.metaGrid}>
             <View style={styles.metaItem}>
-              <Text style={styles.metaLabel}>Точка</Text>
+              <Text style={styles.metaLabel}>{t('orderDetails.outlet')}</Text>
               <Text style={styles.metaValue}>{safeText(outletName)}</Text>
             </View>
 
             <View style={styles.metaItemRight}>
               <View style={styles.metaRow}>
                 <Clock size={16} color={COLORS.muted} strokeWidth={2.2} />
-                <Text style={styles.metaLabelInline}>создан</Text>
+                <Text style={styles.metaLabelInline}>{t('orderDetails.created')}</Text>
                 <Text style={styles.metaValueInline}>{createdAt}</Text>
               </View>
 
               <View style={[styles.metaRow, { marginTop: 8 }]}>
                 <Clock size={16} color={COLORS.muted} strokeWidth={2.2} />
-                <Text style={styles.metaLabelInline}>доставить</Text>
+                <Text style={styles.metaLabelInline}>{t('orderDetails.deliver')}</Text>
                 <Text style={styles.metaValueInline}>{deliverAt}</Text>
               </View>
             </View>
@@ -311,7 +316,7 @@ export default function OrderDetailsScreenModern({
             ) : (
               <CreditCard size={18} color={COLORS.primary} strokeWidth={2.2} />
             )}
-            <Text style={styles.payText}>{paymentLabel(o.paymentMethod)}</Text>
+            <Text style={styles.payText}>{paymentLabel(o.paymentMethod, t)}</Text>
           </View>
         </View>
 
@@ -325,7 +330,7 @@ export default function OrderDetailsScreenModern({
             <View style={styles.actionIconCircle}>
               <Phone size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
-            <Text style={styles.actionText}>Звонок</Text>
+            <Text style={styles.actionText}>{t('orderDetails.call')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -336,7 +341,7 @@ export default function OrderDetailsScreenModern({
             <View style={styles.actionIconCircle}>
               <Navigation size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
-            <Text style={styles.actionText}>Waze</Text>
+            <Text style={styles.actionText}>{t('orderDetails.waze')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -347,7 +352,7 @@ export default function OrderDetailsScreenModern({
             <View style={[styles.actionIconCircle, styles.actionIconCirclePrimary]}>
               <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
-            <Text style={[styles.actionText, styles.actionTextPrimary]}>ВЗЯТЬ</Text>
+            <Text style={[styles.actionText, styles.actionTextPrimary]}>{t('orderDetails.take')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -369,7 +374,7 @@ export default function OrderDetailsScreenModern({
           <View style={styles.cardAccentSoft} />
           <View style={styles.sectionHeader}>
             <MapPin size={18} color={COLORS.primary} strokeWidth={2.2} />
-            <Text style={styles.sectionTitle}>Адрес</Text>
+            <Text style={styles.sectionTitle}>{t('orderDetails.address')}</Text>
           </View>
 
           <Text style={styles.addressMain}>{safeText(fullAddress)}</Text>
@@ -377,12 +382,12 @@ export default function OrderDetailsScreenModern({
 
           <View style={styles.smallFields}>
             <View style={styles.smallField}>
-              <Text style={styles.smallLabel}>Домофон / код</Text>
+              <Text style={styles.smallLabel}>{t('orderDetails.intercom')}</Text>
               <Text style={styles.smallValue}>{safeText(o.addressCode)}</Text>
             </View>
 
             <View style={styles.smallField}>
-              <Text style={styles.smallLabel}>Комментарий</Text>
+              <Text style={styles.smallLabel}>{t('orderDetails.comment')}</Text>
               <Text style={styles.smallValue}>{notes}</Text>
             </View>
           </View>
@@ -392,11 +397,11 @@ export default function OrderDetailsScreenModern({
           <View style={styles.cardAccentSoft} />
           <View style={styles.sectionHeader}>
             <ClipboardList size={18} color={COLORS.primary} strokeWidth={2.2} />
-            <Text style={styles.sectionTitle}>Состав заказа</Text>
+            <Text style={styles.sectionTitle}>{t('orderDetails.items')}</Text>
           </View>
 
           {items.length === 0 ? (
-            <Text style={styles.emptyText}>Позиции не найдены.</Text>
+            <Text style={styles.emptyText}>{t('orderDetails.noItems')}</Text>
           ) : (
             <View style={{ marginTop: 8 }}>
               {items.map((it, idx) => {
@@ -416,7 +421,7 @@ export default function OrderDetailsScreenModern({
                       <Text style={styles.itemName} numberOfLines={2}>{name}</Text>
                       <Text style={styles.itemMeta}>
                         {qty} × {formatMoney(unitPrice)}
-                        {discPctClamped > 0 ? `  •  скидка ${discPctClamped}%` : ''}
+                        {discPctClamped > 0 ? `  •  ${t('orderDetails.discountLine', { percent: discPctClamped })}` : ''}
                       </Text>
                     </View>
                     <Text style={styles.itemSum}>{formatMoney(lineTotal)}</Text>
@@ -429,17 +434,17 @@ export default function OrderDetailsScreenModern({
           <View style={styles.divider} />
 
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Итого по заказу</Text>
+            <Text style={styles.totalLabel}>{t('orderDetails.subtotal')}</Text>
             <Text style={styles.totalValue}>{subtotal}</Text>
           </View>
 
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Скидка</Text>
+            <Text style={styles.totalLabel}>{t('orderDetails.discount')}</Text>
             <Text style={styles.totalValue}>{discount}</Text>
           </View>
 
           <View style={[styles.totalRow, { marginTop: 8 }]}>
-            <Text style={styles.totalLabelStrong}>Итого к оплате</Text>
+            <Text style={styles.totalLabelStrong}>{t('orderDetails.total')}</Text>
             <Text style={styles.totalValueStrong}>{total}</Text>
           </View>
         </View>

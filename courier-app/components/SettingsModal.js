@@ -10,7 +10,9 @@ import {
     Alert,
 } from 'react-native';
 import { useTheme } from '../theme';
+import { useT } from '../i18n';
 
+// Названия языков всегда на родном языке — не переводятся.
 const LANGUAGES = [
     { code: 'ru', label: 'Русский' },
     { code: 'en', label: 'English' },
@@ -18,8 +20,8 @@ const LANGUAGES = [
 ];
 
 const THEMES = [
-    { code: 'dark', label: 'Тёмная' },
-    { code: 'light', label: 'Светлая' },
+    { code: 'dark', labelKey: 'settings.themeDark' },
+    { code: 'light', labelKey: 'settings.themeLight' },
 ];
 
 export default function SettingsModal({
@@ -33,17 +35,17 @@ export default function SettingsModal({
     notificationSoundEnabled = true,
 }) {
     const { colors: COLORS } = useTheme();
+    const { t } = useT();
     const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
-    const [localLanguage, setLocalLanguage] = useState(currentLanguage);
     const [soundEnabled, setSoundEnabled] = useState(notificationSoundEnabled);
 
-    // Выбранная тема берётся напрямую из глобального состояния, чтобы
-    // подсветка всегда отражала реально применённую тему.
+    // Выбор языка и темы берётся напрямую из глобального состояния, чтобы
+    // подсветка всегда отражала реально применённые значения.
+    const localLanguage = currentLanguage;
     const localTheme = currentTheme;
 
     const handleLanguageChange = (code) => {
-        setLocalLanguage(code);
         onLanguageChange?.(code);
     };
 
@@ -69,7 +71,7 @@ export default function SettingsModal({
                 {/* Header */}
                 <View style={styles.header}>
                     <View style={styles.headerContent}>
-                        <Text style={styles.headerTitle}>Настройки</Text>
+                        <Text style={styles.headerTitle}>{t('settings.title')}</Text>
                     </View>
                     <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
                         <Text style={styles.closeButtonText}>✕</Text>
@@ -84,12 +86,12 @@ export default function SettingsModal({
                 >
                     {/* Sound Settings */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Звук оповещений</Text>
+                        <Text style={styles.sectionTitle}>{t('settings.soundSection')}</Text>
                         <View style={styles.settingRow}>
                             <View style={styles.settingInfo}>
-                                <Text style={styles.settingLabel}>Звук новых заказов</Text>
+                                <Text style={styles.settingLabel}>{t('settings.soundLabel')}</Text>
                                 <Text style={styles.settingDescription}>
-                                    {soundEnabled ? 'Включен' : 'Отключен'}
+                                    {soundEnabled ? t('settings.on') : t('settings.off')}
                                 </Text>
                             </View>
                             <Switch
@@ -103,7 +105,7 @@ export default function SettingsModal({
 
                     {/* Language Settings */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Язык интерфейса</Text>
+                        <Text style={styles.sectionTitle}>{t('settings.langSection')}</Text>
                         {LANGUAGES.map((lang) => (
                             <TouchableOpacity
                                 key={lang.code}
@@ -133,7 +135,7 @@ export default function SettingsModal({
 
                     {/* Theme Settings */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Тема приложения</Text>
+                        <Text style={styles.sectionTitle}>{t('settings.themeSection')}</Text>
                         {THEMES.map((theme) => (
                             <TouchableOpacity
                                 key={theme.code}
@@ -150,7 +152,7 @@ export default function SettingsModal({
                                         localTheme === theme.code && styles.optionButtonTextActive,
                                     ]}
                                 >
-                                    {theme.label}
+                                    {t(theme.labelKey)}
                                 </Text>
                                 {localTheme === theme.code && (
                                     <View style={styles.checkmark}>
@@ -165,7 +167,7 @@ export default function SettingsModal({
                     <View style={styles.section}>
                         <View style={styles.infoBox}>
                             <Text style={styles.infoText}>
-                                Все изменения сохраняются автоматически
+                                {t('settings.autosaveNote')}
                             </Text>
                         </View>
                     </View>

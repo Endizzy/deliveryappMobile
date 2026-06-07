@@ -1,7 +1,8 @@
-// useOrdersWebSocket.js
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, ORIGIN } from './constants';
+import { notifyNewOrder } from './notificationSound';
 
 const TOKEN_KEY = 'authToken';
 
@@ -137,11 +138,13 @@ export function useOrdersWebSocket({ unit }) {
       if (!o || o.isFinished) return;
 
       if (!o.courierId) {
-        // Свободный → добавить в доступные
+        // Свободный → добавить в доступные + оповещение (вибрация + звук)
         setAvailableOrders((prev) => mergeById(prev, [o]));
+        notifyNewOrder();
       } else if (myUnitId && o.courierId === myUnitId) {
-        // Сразу назначен мне (admin создал заказ с курьером)
+        // Сразу назначен мне (admin создал заказ с курьером) → оповещение
         setMyOrders((prev) => mergeById(prev, [o]));
+        notifyNewOrder();
       }
       return;
     }
