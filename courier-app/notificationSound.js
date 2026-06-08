@@ -1,37 +1,16 @@
+// notificationSound.js
+// ВРЕМЕННО: воспроизведение звука отключено (зависимость expo-audio убрана
+// из-за краша нативной части в standalone-сборке). Оповещение о новом заказе
+// сейчас — только короткая вибрация. Тумблер в настройках управляет вибрацией,
+// значение сохраняется в AsyncStorage. Звук вернём, когда подключим аудио
+// правильно (через expo prebuild / линковку нативного модуля).
 
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const SOUND_KEY = 'notificationSoundEnabled';
 
-const SOUND_SOURCE = require('./assets/orderNotification.mp3');
-
-let enabled = true;      // текущее состояние (кэш в памяти)
-let player = null;       // переиспользуемый плеер
-let audioModeReady = false;
-
-function ensurePlayer() {
-    if (!player) {
-        try {
-            player = createAudioPlayer(SOUND_SOURCE);
-        } catch (e) {
-            player = null;
-        }
-    }
-    return player;
-}
-
-async function ensureAudioMode() {
-    if (audioModeReady) return;
-    try {
-        // Проигрывать даже когда телефон в беззвучном режиме
-        await setAudioModeAsync({ playsInSilentMode: true });
-        audioModeReady = true;
-    } catch (e) {
-        // ignore
-    }
-}
+let enabled = true; // кэш настройки в памяти
 
 // Загрузить сохранённое значение настройки при старте приложения.
 export async function initOrderSound() {
@@ -41,8 +20,6 @@ export async function initOrderSound() {
     } catch (e) {
         enabled = true;
     }
-    await ensureAudioMode();
-    ensurePlayer();
     return enabled;
 }
 
@@ -58,23 +35,13 @@ export async function setOrderSoundEnabled(value) {
     } catch (e) {
         // ignore
     }
-    // При включении оповещений проигрываем звук — как подтверждение/превью.
-    if (enabled) playOrderSound();
+    // При включении — короткая вибрация как подтверждение.
+    if (enabled) vibrateOrder();
 }
 
-// Проиграть звук, если оповещения включены.
+// Заглушка звука (вернём вместе с аудио-модулем).
 export async function playOrderSound() {
-    if (!enabled) return;
-    try {
-        await ensureAudioMode();
-        const p = ensurePlayer();
-        if (!p) return;
-        // Перемотать в начало, чтобы звук срабатывал и при частых заказах подряд
-        try { await p.seekTo(0); } catch (e) {}
-        p.play();
-    } catch (e) {
-        // ignore — звук не критичен для работы приложения
-    }
+    // no-op
 }
 
 // Короткая вибрация.
@@ -82,9 +49,8 @@ export function vibrateOrder() {
     try { Vibration.vibrate(200); } catch (e) {}
 }
 
-// Полное оповещение о новом заказе: вибрация + звук
+// Оповещение о новом заказе: вибрация, если оповещения включены.
 export function notifyNewOrder() {
     if (!enabled) return;
     vibrateOrder();
-    playOrderSound();
 }
