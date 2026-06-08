@@ -1,4 +1,4 @@
-package com.courierapp
+package com.endizzy.courierapp
 
 import android.os.Build
 import android.os.Bundle
