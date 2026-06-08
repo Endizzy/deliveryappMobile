@@ -16,6 +16,9 @@ import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './theme';
 import { useT } from './i18n';
+import FadeInView from './components/anim/FadeInView';
+import PressableScale from './components/anim/PressableScale';
+import FreshHighlight from './components/anim/FreshHighlight';
 
 function formatTimeOnly(dateStr) {
   if (!dateStr) return null;
@@ -151,7 +154,7 @@ export default function OrdersListScreenModern({
 
   const Wrapper = useSafeArea ? SafeAreaView : View;
 
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item, index }) => {
     const status = statusLabel(item.status, t);
     const created = formatTimeOnly(item.createdAt);
     const scheduled = formatTimeOnly(item.scheduledAt);
@@ -159,13 +162,18 @@ export default function OrdersListScreenModern({
     const timeCaption = scheduled ? t('ordersList.captionDelivery') : t('ordersList.captionAccepted');
     const orderNo = item.orderSeq || item.orderNo || item.id;
 
+    // «Свежий» заказ — пришёл недавно (для мягкой подсветки при появлении)
+    const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : NaN;
+    const isFresh = Number.isFinite(createdMs) && Date.now() - createdMs < 12000;
+
     return (
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={styles.card}
-        onPress={() => onOpenOrder?.({ id: item.id || item.order_id, ...item })}
-      >
-        <View style={styles.cardRow}>
+      <FadeInView index={index}>
+        <PressableScale
+          style={styles.card}
+          onPress={() => onOpenOrder?.({ id: item.id || item.order_id, ...item })}
+        >
+          <FreshHighlight active={isFresh} color={COLORS.softBlue} />
+          <View style={styles.cardRow}>
           {/* Левый блок: время выдачи + статус */}
           <View style={styles.timeBox}>
             <Text style={styles.timeBig}>{primaryTime}</Text>
@@ -202,17 +210,18 @@ export default function OrdersListScreenModern({
           {/* Право: сумма + кнопка «взять» */}
           <View style={styles.rightCol}>
             <Text style={styles.price}>{formatMoney(item.amountTotal)} €</Text>
-            <TouchableOpacity
-              activeOpacity={0.85}
+            <PressableScale
               style={styles.takeBtn}
               onPress={() => onActionPress?.(item)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              scaleTo={0.9}
             >
               <PlusCircle size={20} color={COLORS.onPrimary} strokeWidth={2.4} />
-            </TouchableOpacity>
+            </PressableScale>
           </View>
-        </View>
-      </TouchableOpacity>
+          </View>
+        </PressableScale>
+      </FadeInView>
     );
   };
 

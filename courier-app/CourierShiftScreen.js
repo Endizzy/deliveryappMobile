@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -11,6 +11,7 @@ import {
     Linking,
     StatusBar,
     AppState,
+    Animated,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -29,6 +30,7 @@ import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 import { useOrdersWebSocket } from './useOrdersWebSocket';
 import SettingsModal from './components/SettingsModal';
 import { Settings } from 'lucide-react-native';
+import PressableScale from './components/anim/PressableScale';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import { initOrderSound, setOrderSoundEnabled } from './notificationSound';
@@ -194,6 +196,32 @@ export default function CourierShiftScreen({ onLogout }) {
         })();
     }, []);
 
+    // ── Анимации статуса ─────────────────────────────────────────────────────
+    // Пульс индикатора подключения (пока идёт connecting).
+    const wsPulse = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        if (connected) {
+            wsPulse.stopAnimation();
+            Animated.timing(wsPulse, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+            return;
+        }
+        const loop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(wsPulse, { toValue: 0.4, duration: 650, useNativeDriver: true }),
+                Animated.timing(wsPulse, { toValue: 1, duration: 650, useNativeDriver: true }),
+            ])
+        );
+        loop.start();
+        return () => loop.stop();
+    }, [connected]);
+
+    // Мягкая смена бейджа ON SHIFT / OFFLINE.
+    const statusFade = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        statusFade.setValue(0.4);
+        Animated.timing(statusFade, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+    }, [status]);
+
     // ── Выход ───────────────────────────────────────────────────────────────
     const handleExit = async () => {
         try {
@@ -326,10 +354,11 @@ export default function CourierShiftScreen({ onLogout }) {
                                 <Text style={styles.nickname}>{nickname}</Text>
                                 <Text style={styles.unitId}>{t('shift.idLabel')}: {idText}</Text>
 
-                                <View
+                                <Animated.View
                                     style={[
                                         styles.wsBadge,
                                         connected ? styles.wsBadgeOnline : styles.wsBadgeOffline,
+                                        { opacity: wsPulse },
                                     ]}
                                 >
                                     <Text
@@ -340,16 +369,17 @@ export default function CourierShiftScreen({ onLogout }) {
                                     >
                                         {connected ? t('shift.wsOnline') : t('shift.wsConnecting')}
                                     </Text>
-                                </View>
+                                </Animated.View>
                             </View>
 
                             <View style={styles.statusBlock}>
-                                <View
+                                <Animated.View
                                     style={[
                                         styles.shiftBadge,
                                         status === 'online'
                                             ? styles.shiftBadgeOnline
                                             : styles.shiftBadgeOffline,
+                                        { opacity: statusFade },
                                     ]}
                                 >
                                     <Text
@@ -360,15 +390,15 @@ export default function CourierShiftScreen({ onLogout }) {
                                     >
                                         {status === 'online' ? t('shift.onShift') : t('shift.offline')}
                                     </Text>
-                                </View>
+                                </Animated.View>
 
-                                <TouchableOpacity
+                                <PressableScale
                                     style={styles.settingsButton}
                                     onPress={() => setSettingsVisible(true)}
-                                    activeOpacity={0.7}
+                                    scaleTo={0.9}
                                 >
                                     <Text style={styles.settingsButtonText}><Settings color={COLORS.accent} /></Text>
-                                </TouchableOpacity>
+                                </PressableScale>
                             </View>
                         </View>
 
@@ -379,17 +409,17 @@ export default function CourierShiftScreen({ onLogout }) {
                             </Text>
 
                             <View style={styles.controls}>
-                                <TouchableOpacity style={styles.primaryButton} onPress={startShift} activeOpacity={0.85}>
+                                <PressableScale style={styles.primaryButton} onPress={startShift}>
                                     <Text style={styles.primaryButtonText}>{t('shift.start')}</Text>
-                                </TouchableOpacity>
+                                </PressableScale>
 
-                                <TouchableOpacity style={styles.ghostButton} onPress={stopShift} activeOpacity={0.85}>
+                                <PressableScale style={styles.ghostButton} onPress={stopShift}>
                                     <Text style={styles.ghostButtonText}>{t('shift.stop')}</Text>
-                                </TouchableOpacity>
+                                </PressableScale>
 
-                                <TouchableOpacity style={styles.exitButton} onPress={handleExit} activeOpacity={0.85}>
+                                <PressableScale style={styles.exitButton} onPress={handleExit}>
                                     <Text style={styles.exitButtonText}>{t('shift.logout')}</Text>
-                                </TouchableOpacity>
+                                </PressableScale>
                             </View>
                         </View>
                     </View>

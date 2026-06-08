@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
 import { useT } from './i18n';
+import PressableScale from './components/anim/PressableScale';
 
 const LOCALES = { ru: 'ru-RU', en: 'en-GB', lv: 'lv-LV' };
 import {
@@ -321,9 +322,8 @@ export default function OrderDetailsScreenModern({
         </View>
 
         <View style={styles.actionsRow}>
-          <TouchableOpacity
+          <PressableScale
             style={[styles.actionBtn, !canCall && styles.actionBtnDisabled]}
-            activeOpacity={0.9}
             onPress={handleCall}
             disabled={!canCall}
           >
@@ -331,29 +331,27 @@ export default function OrderDetailsScreenModern({
               <Phone size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
             <Text style={styles.actionText}>{t('orderDetails.call')}</Text>
-          </TouchableOpacity>
+          </PressableScale>
 
-          <TouchableOpacity
+          <PressableScale
             style={styles.actionBtn}
-            activeOpacity={0.9}
-            onPress={handleWaze}  
+            onPress={handleWaze}
           >
             <View style={styles.actionIconCircle}>
               <Navigation size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
             <Text style={styles.actionText}>{t('orderDetails.waze')}</Text>
-          </TouchableOpacity>
+          </PressableScale>
 
-          <TouchableOpacity
+          <PressableScale
             style={[styles.actionBtn, styles.actionBtnPrimary]}
-            activeOpacity={0.9}
             onPress={() => onTake?.(o)}
           >
             <View style={[styles.actionIconCircle, styles.actionIconCirclePrimary]}>
               <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
             </View>
             <Text style={[styles.actionText, styles.actionTextPrimary]}>{t('orderDetails.take')}</Text>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
 
         <View style={styles.card}>

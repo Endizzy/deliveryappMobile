@@ -12,6 +12,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from './theme';
 import { useT } from './i18n';
+import FadeInView from './components/anim/FadeInView';
+import PressableScale from './components/anim/PressableScale';
 
 // Список точек выдачи — serverName должен совпадать со значением поля outlet в заказе
 const OUTLETS = [
@@ -38,20 +40,20 @@ const AllOrdersScreen = ({
     return outletCounts[key] ?? 0;
   };
 
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item, index }) => {
     const count = getCount(item);
     const isActive = count > 0;
 
     return (
-      <TouchableOpacity
-        activeOpacity={0.85}
-        style={[
-          styles.card,
-          item.isAll && styles.cardAll,
-          isActive && styles.cardWithOrders,
-        ]}
-        onPress={() => onOpenOutlet?.(item)}
-      >
+      <FadeInView index={index}>
+        <PressableScale
+          style={[
+            styles.card,
+            item.isAll && styles.cardAll,
+            isActive && styles.cardWithOrders,
+          ]}
+          onPress={() => onOpenOutlet?.(item)}
+        >
         <View style={styles.cardMain}>
           <View style={styles.cardTitleWrapper}>
             <View style={styles.titleRow}>
@@ -80,7 +82,8 @@ const AllOrdersScreen = ({
             </Text>
           </View>
         </View>
-      </TouchableOpacity>
+        </PressableScale>
+      </FadeInView>
     );
   };
 

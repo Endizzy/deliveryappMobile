@@ -13,6 +13,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronRight, CheckCircle2, Clock } from 'lucide-react-native';
 import { useTheme } from './theme';
 import { useT } from './i18n';
+import FadeInView from './components/anim/FadeInView';
+import PressableScale from './components/anim/PressableScale';
 
 // Форматирование только времени (например: "14:16")
 function formatTimeOnly(dateStr) {
@@ -78,9 +80,8 @@ export default function MyOrdersScreen({
     const timeDelivery = formatTimeOnly(item.scheduledAt);
 
     return (
-      <View style={[styles.card, isCompleted && styles.cardCompleted]}>
-        <TouchableOpacity
-          activeOpacity={0.85}
+      <FadeInView index={index} style={[styles.card, isCompleted && styles.cardCompleted]}>
+        <PressableScale
           style={styles.cardContent}
           onPress={() => !isCompleted && onOpenOrder?.(item)}
         >
@@ -123,31 +124,30 @@ export default function MyOrdersScreen({
 
           {!isCompleted && <ChevronRight size={18} color={COLORS.muted} strokeWidth={2.2} />}
           {isCompleted && <CheckCircle2 size={20} color={COLORS.success} strokeWidth={2.2} />}
-        </TouchableOpacity>
+        </PressableScale>
 
         {!isCompleted && (
           <View style={styles.actions}>
-            <TouchableOpacity
+            <PressableScale
               style={styles.completeBtn}
-              activeOpacity={0.85}
               onPress={() => handleCompleteOrder(item.id, number)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <CheckCircle2 size={18} color={COLORS.success} strokeWidth={2.2} />
               <Text style={styles.completeBtnText}>{t('myOrders.done')}</Text>
-            </TouchableOpacity>
+            </PressableScale>
 
-            <TouchableOpacity
+            <PressableScale
               style={styles.removeBtn}
-              activeOpacity={0.85}
               onPress={() => onRemoveOrder?.(item.id)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              scaleTo={0.9}
             >
               <Trash2 size={18} color={COLORS.danger} strokeWidth={2.2} />
-            </TouchableOpacity>
+            </PressableScale>
           </View>
         )}
-      </View>
+      </FadeInView>
     );
   };
 
