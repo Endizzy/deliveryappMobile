@@ -11,13 +11,13 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "expo": "^54.0.25",
+    "expo": "~54.0.35",
     "expo-audio": "~1.0.14",
-    "expo-dev-client": "~6.0.20",
-    "expo-location": "~19.0.7",
-    "expo-notifications": "~0.32.13",
-    "expo-status-bar": "~3.0.8",
-    "expo-task-manager": "~14.0.8",
+    "expo-dev-client": "~6.0.21",
+    "expo-location": "~19.0.8",
+    "expo-notifications": "~0.32.17",
+    "expo-status-bar": "~3.0.9",
+    "expo-task-manager": "~14.0.9",
     "lottie-react-native": "^7.3.6",
     "lucide-react-native": "^0.554.0",
     "react": "19.1.0",
@@ -28,6 +28,11 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0"
+  },
+  "overrides": {
+    "expo-audio": "~1.0.14",
+    "expo-asset": "~12.0.10",
+    "expo-modules-core": "~3.0.26"
   },
   "private": true
 }
