@@ -1,16 +1,41 @@
 // notificationSound.js
-// ВРЕМЕННО: воспроизведение звука отключено (зависимость expo-audio убрана
-// из-за краша нативной части в standalone-сборке). Оповещение о новом заказе
-// сейчас — только короткая вибрация. Тумблер в настройках управляет вибрацией,
-// значение сохраняется в AsyncStorage. Звук вернём, когда подключим аудио
-// правильно (через expo prebuild / линковку нативного модуля).
+// Звук оповещения о новых заказах (expo-audio) + вибрация. Управляется тумблером
+// в настройках, значение сохраняется в AsyncStorage. Плеер создаётся лениво, все
+// нативные вызовы обёрнуты в try/catch.
 
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { Vibration } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const SOUND_KEY = 'notificationSoundEnabled';
 
-let enabled = true; // кэш настройки в памяти
+// Источник звука (mp3 бандлится Metro по умолчанию)
+const SOUND_SOURCE = require('./assets/orderNotification.mp3');
+
+let enabled = true;      // текущее состояние (кэш в памяти)
+let player = null;       // переиспользуемый плеер
+let audioModeReady = false;
+
+function ensurePlayer() {
+    if (!player) {
+        try {
+            player = createAudioPlayer(SOUND_SOURCE);
+        } catch (e) {
+            player = null;
+        }
+    }
+    return player;
+}
+
+async function ensureAudioMode() {
+    if (audioModeReady) return;
+    try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+        audioModeReady = true;
+    } catch (e) {
+        // ignore
+    }
+}
 
 // Загрузить сохранённое значение настройки при старте приложения.
 export async function initOrderSound() {
@@ -20,6 +45,8 @@ export async function initOrderSound() {
     } catch (e) {
         enabled = true;
     }
+    await ensureAudioMode();
+    ensurePlayer();
     return enabled;
 }
 
@@ -35,13 +62,23 @@ export async function setOrderSoundEnabled(value) {
     } catch (e) {
         // ignore
     }
-    // При включении — короткая вибрация как подтверждение.
-    if (enabled) vibrateOrder();
+    // При включении оповещений проигрываем звук — как подтверждение/превью.
+    if (enabled) playOrderSound();
 }
 
-// Заглушка звука (вернём вместе с аудио-модулем).
+// Проиграть звук, если оповещения включены.
 export async function playOrderSound() {
-    // no-op
+    if (!enabled) return;
+    try {
+        await ensureAudioMode();
+        const p = ensurePlayer();
+        if (!p) return;
+        // Перемотать в начало, чтобы звук срабатывал и при частых заказах подряд
+        try { await p.seekTo(0); } catch (e) {}
+        p.play();
+    } catch (e) {
+        // ignore — звук не критичен для работы приложения
+    }
 }
 
 // Короткая вибрация.
@@ -49,8 +86,10 @@ export function vibrateOrder() {
     try { Vibration.vibrate(200); } catch (e) {}
 }
 
-// Оповещение о новом заказе: вибрация, если оповещения включены.
+// Полное оповещение о новом заказе: вибрация + звук, но только если
+// оповещения включены в настройках.
 export function notifyNewOrder() {
     if (!enabled) return;
     vibrateOrder();
+    playOrderSound();
 }
