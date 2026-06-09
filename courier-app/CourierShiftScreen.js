@@ -34,6 +34,7 @@ import PressableScale from './components/anim/PressableScale';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import { initOrderSound, setOrderSoundEnabled } from './notificationSound';
+import { registerPushToken, unregisterPushToken, addOrderTapListener } from './pushNotifications';
 
 const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
@@ -196,6 +197,18 @@ export default function CourierShiftScreen({ onLogout }) {
         })();
     }, []);
 
+    // ── Push-уведомления: регистрация токена + переход по тапу ───────────────
+    useEffect(() => {
+        registerPushToken();
+        const unsubscribe = addOrderTapListener(() => {
+            // Тап по уведомлению о новом заказе → открыть список «Все»
+            setSelectedOrder(null);
+            setSelectedOutlet(null);
+            setActiveTab(TAB_TYPES.ALL);
+        });
+        return unsubscribe;
+    }, []);
+
     // ── Анимации статуса ─────────────────────────────────────────────────────
     // Пульс индикатора подключения (пока идёт connecting).
     const wsPulse = useRef(new Animated.Value(1)).current;
@@ -226,6 +239,7 @@ export default function CourierShiftScreen({ onLogout }) {
     const handleExit = async () => {
         try {
             await stopTracking();
+            await unregisterPushToken(); // снять токен на сервере, пока есть авторизация
 
             await AsyncStorage.removeItem(TOKEN_KEY);
             await AsyncStorage.removeItem(UNIT_KEY);
