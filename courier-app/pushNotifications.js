@@ -55,28 +55,46 @@ export async function registerPushToken() {
             const req = await Notifications.requestPermissionsAsync();
             granted = req.granted || req.status === 'granted';
         }
-        if (!granted) return null;
+        console.log('[push] permission granted:', granted);
+        if (!granted) {
+            console.warn('[push] notifications permission NOT granted — токен не получаем');
+            return null;
+        }
 
-        const tokenResp = await Notifications.getExpoPushTokenAsync({ projectId: PROJECT_ID });
-        const expoToken = tokenResp?.data;
+        let expoToken = null;
+        try {
+            const tokenResp = await Notifications.getExpoPushTokenAsync({ projectId: PROJECT_ID });
+            expoToken = tokenResp?.data;
+        } catch (tokErr) {
+            console.warn('[push] getExpoPushTokenAsync FAILED (вероятно не настроен FCM):', tokErr?.message ?? tokErr);
+            return null;
+        }
+        console.log('[push] expo token:', expoToken);
         if (!expoToken) return null;
 
         const authToken = await AsyncStorage.getItem(TOKEN_KEY);
-        if (!authToken) return expoToken;
+        if (!authToken) {
+            console.warn('[push] нет authToken — не регистрируем на сервере');
+            return expoToken;
+        }
 
-        await fetch(`${ORIGIN}/api/push/register-token`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({ token: expoToken, platform: Platform.OS }),
-        }).catch(() => {});
+        try {
+            const res = await fetch(`${ORIGIN}/api/push/register-token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${authToken}`,
+                },
+                body: JSON.stringify({ token: expoToken, platform: Platform.OS }),
+            });
+            console.log('[push] register-token POST ->', res.status, ORIGIN);
+        } catch (postErr) {
+            console.warn('[push] register-token POST error:', postErr?.message ?? postErr);
+        }
 
         return expoToken;
     } catch (e) {
-        // На эмуляторе / без настроенного FCM getExpoPushTokenAsync кидает —
-        // это ожидаемо, просто не регистрируем токен.
+        console.warn('[push] registerPushToken error:', e?.message ?? e);
         return null;
     }
 }

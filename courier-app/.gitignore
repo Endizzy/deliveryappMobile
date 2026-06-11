@@ -55,3 +55,6 @@ yarn-error.*
 *.tsbuildinfo
 
 # @end expo-cli
+
+#google services
+deliveryappbento-firebase-adminsdk-fbsvc-9203a7c410.json

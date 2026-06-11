@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "400685540865",
+    "project_id": "deliveryappbento",
+    "storage_bucket": "deliveryappbento.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:400685540865:android:b75a58f59b6aa937b60200",
+        "android_client_info": {
+          "package_name": "com.endizzy.courierapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDaekzH7ZXaMX3RBCei4Ycz7w4rvkflt00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
