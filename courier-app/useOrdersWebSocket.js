@@ -165,14 +165,38 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       const o = normalizeOrder(msg.order);
       if (!o) return;
 
-      // Завершён/отменён → убрать отовсюду
+      const isMine   = myUnitId && o.courierId === myUnitId;
+      const statusLc = (o.status || '').toLowerCase();
+
+      // Завершён курьером → оставляем в «Мои» как выполненный (секция completed),
+      // если это мой заказ; иначе убираем отовсюду.
+      if (statusLc === 'completed') {
+        setAvailableOrders((prev) => removeById(prev, o.id));
+        if (isMine) {
+          setMyOrders((prev) => {
+            const marked = {
+              ...o,
+              completed: true,
+              completedAt: o.completedAt || new Date().toISOString(),
+            };
+            const exists = prev.some((x) => String(x.id) === String(o.id));
+            return exists
+              ? prev.map((x) => (String(x.id) === String(o.id) ? { ...x, ...marked } : x))
+              : [...prev, marked];
+          });
+        } else {
+          setMyOrders((prev) => removeById(prev, o.id));
+        }
+        return;
+      }
+
+      // Прочие финальные статусы (отменён) → убрать отовсюду
       if (o.isFinished) {
         setAvailableOrders((prev) => removeById(prev, o.id));
         setMyOrders        ((prev) => removeById(prev, o.id));
         return;
       }
 
-      const isMine = myUnitId && o.courierId === myUnitId;
       const isFree = !o.courierId;
 
       if (isMine) {
@@ -291,6 +315,22 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     return data;
   }, []);
 
+  // ── Завершить заказ (Done) ─────────────────────────────────────────
+  const completeOrder = useCallback(async (orderId) => {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/complete`, {
+      method:  'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Не удалось завершить заказ');
+    return data;
+  }, []);
+
   return {
     availableOrders,
     myOrders,
@@ -300,5 +340,6 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     fetchMy,
     assignOrder,
     releaseOrder,
+    completeOrder,
   };
 }

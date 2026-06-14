@@ -44,9 +44,10 @@ export default function MyOrdersScreen({
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const { active, completed } = useMemo(() => {
+    const isDone = (o) => o.completed || (o.status || '').toLowerCase() === 'completed';
     return {
-      active: myOrders.filter((o) => !o.completed),
-      completed: myOrders.filter((o) => o.completed),
+      active: myOrders.filter((o) => !isDone(o)),
+      completed: myOrders.filter(isDone),
     };
   }, [myOrders]);
 
@@ -83,7 +84,7 @@ export default function MyOrdersScreen({
       <FadeInView index={index} style={[styles.card, isCompleted && styles.cardCompleted]}>
         <PressableScale
           style={styles.cardContent}
-          onPress={() => !isCompleted && onOpenOrder?.(item)}
+          onPress={() => onOpenOrder?.(item)}
         >
           <View style={styles.leftCol}>
             <View style={[styles.orderNumPill, isCompleted && styles.orderNumPillCompleted]}>

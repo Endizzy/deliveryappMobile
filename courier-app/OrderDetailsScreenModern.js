@@ -92,6 +92,7 @@ function statusLabel(status, t) {
   if (s === 'new') return { text: t('orderDetails.statusNew'), tone: 'info' };
   if (s === 'ready') return { text: t('orderDetails.statusReady'), tone: 'success' };
   if (s === 'active') return { text: t('orderDetails.statusActive'), tone: 'info' };
+  if (s === 'completed') return { text: t('orderDetails.statusCompleted'), tone: 'success' };
   if (s === 'cancelled') return { text: t('orderDetails.statusCancelled'), tone: 'danger' };
   return { text: safeText(status), tone: 'neutral' };
 }
@@ -183,6 +184,10 @@ export default function OrderDetailsScreenModern({
 
   const st = statusLabel(o.status, t);
   const stTone = toneStyles(st.tone);
+
+  // «Взять» показываем только для доступных заказов (не завершён/не отменён)
+  const statusLc = (o.status || '').toLowerCase();
+  const canTake = !!onTake && statusLc !== 'completed' && statusLc !== 'cancelled';
 
   const titleNumber =
     o.orderSeq ? `№${o.orderSeq}` :
@@ -343,15 +348,17 @@ export default function OrderDetailsScreenModern({
             <Text style={styles.actionText}>{t('orderDetails.waze')}</Text>
           </PressableScale>
 
-          <PressableScale
-            style={[styles.actionBtn, styles.actionBtnPrimary]}
-            onPress={() => onTake?.(o)}
-          >
-            <View style={[styles.actionIconCircle, styles.actionIconCirclePrimary]}>
-              <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
-            </View>
-            <Text style={[styles.actionText, styles.actionTextPrimary]}>{t('orderDetails.take')}</Text>
-          </PressableScale>
+          {canTake && (
+            <PressableScale
+              style={[styles.actionBtn, styles.actionBtnPrimary]}
+              onPress={() => onTake?.(o)}
+            >
+              <View style={[styles.actionIconCircle, styles.actionIconCirclePrimary]}>
+                <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.actionText, styles.actionTextPrimary]}>{t('orderDetails.take')}</Text>
+            </PressableScale>
+          )}
         </View>
 
         <View style={styles.card}>

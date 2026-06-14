@@ -29,7 +29,8 @@ import MyOrdersScreen from './MyOrdersScreen';
 import TabNavigationBar, { TABS as TAB_TYPES } from './TabNavigationBar';
 import { useOrdersWebSocket } from './useOrdersWebSocket';
 import SettingsModal from './components/SettingsModal';
-import { Settings } from 'lucide-react-native';
+import DailyReportModal from './components/DailyReportModal';
+import { Settings, BarChart3 } from 'lucide-react-native';
 import PressableScale from './components/anim/PressableScale';
 import { useTheme } from './theme';
 import { useT } from './i18n';
@@ -92,6 +93,7 @@ export default function CourierShiftScreen({ onLogout }) {
 
     // ── Settings state ──────────────────────────────────────────────────────
     const [settingsVisible, setSettingsVisible] = useState(false);
+    const [reportVisible, setReportVisible] = useState(false);
     const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(true);
 
     // ── Tab / navigation state ──────────────────────────────────────────────
@@ -116,6 +118,7 @@ export default function CourierShiftScreen({ onLogout }) {
         fetchMy,
         assignOrder,
         releaseOrder,
+        completeOrder,
     } = useOrdersWebSocket({
         unit,
         onAssignedOrder: (order) => setAssignedToast(order),
@@ -472,6 +475,14 @@ export default function CourierShiftScreen({ onLogout }) {
 
                                 <PressableScale
                                     style={styles.settingsButton}
+                                    onPress={() => setReportVisible(true)}
+                                    scaleTo={0.9}
+                                >
+                                    <Text style={styles.settingsButtonText}><BarChart3 color={COLORS.accent} /></Text>
+                                </PressableScale>
+
+                                <PressableScale
+                                    style={styles.settingsButton}
                                     onPress={() => setSettingsVisible(true)}
                                     scaleTo={0.9}
                                 >
@@ -578,6 +589,7 @@ export default function CourierShiftScreen({ onLogout }) {
                             );
                         }}
                         onCompleteOrder={(orderId) => {
+                            // оптимистично помечаем выполненным (мгновенно уходит в секцию «выполнено»)
                             setMyOrders((prev) =>
                                 prev.map((o) =>
                                     o.id === orderId
@@ -585,6 +597,10 @@ export default function CourierShiftScreen({ onLogout }) {
                                         : o
                                 )
                             );
+                            // фиксируем на сервере: статус → completed + WS-оповещение
+                            completeOrder(orderId).catch((e) => {
+                                Alert.alert(t('common.error'), e?.message || t('common.error'));
+                            });
                         }}
                     />
                 );
@@ -619,6 +635,11 @@ export default function CourierShiftScreen({ onLogout }) {
                     setNotificationSoundEnabled(enabled);
                     setOrderSoundEnabled(enabled);
                 }}
+            />
+
+            <DailyReportModal
+                visible={reportVisible}
+                onClose={() => setReportVisible(false)}
             />
 
             <OrderAssignedToast
