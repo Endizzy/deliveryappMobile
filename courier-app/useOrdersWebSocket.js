@@ -76,7 +76,7 @@ function normalizeOrder(raw) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function useOrdersWebSocket({ unit }) {
+export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
   const [availableOrders, setAvailableOrders] = useState([]);
   const [myOrders,        setMyOrders]        = useState([]);
   const [connected,       setConnected]       = useState(false);
@@ -85,6 +85,14 @@ export function useOrdersWebSocket({ unit }) {
   const unitRef   = useRef(unit);
   unitRef.current = unit;
 
+  // Колбэк «заказ назначен мне» держим в ref, чтобы handleMessage не пересоздавался
+  const onAssignedOrderRef = useRef(onAssignedOrder);
+  onAssignedOrderRef.current = onAssignedOrder;
+
+  // Колбэк «токен недействителен» (401) — тоже в ref
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  onUnauthorizedRef.current = onUnauthorized;
+
   // ── REST: загрузить свободные заказы ──────────────────────────────────
   const fetchAvailable = useCallback(async () => {
     try {
@@ -92,6 +100,7 @@ export function useOrdersWebSocket({ unit }) {
       const res   = await fetch(`${ORIGIN}/api/mobile-orders?tab=active`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      if (res.status === 401) { onUnauthorizedRef.current?.(); return; }
       const data = await res.json();
       if (data.ok) setAvailableOrders(data.items || []);
     } catch (e) {
@@ -106,6 +115,7 @@ export function useOrdersWebSocket({ unit }) {
       const res   = await fetch(`${ORIGIN}/api/mobile-orders?tab=my`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      if (res.status === 401) { onUnauthorizedRef.current?.(); return; }
       const data = await res.json();
       if (data.ok) setMyOrders(data.items || []);
     } catch (e) {
@@ -142,9 +152,10 @@ export function useOrdersWebSocket({ unit }) {
         setAvailableOrders((prev) => mergeById(prev, [o]));
         notifyNewOrder();
       } else if (myUnitId && o.courierId === myUnitId) {
-        // Сразу назначен мне (admin создал заказ с курьером) → оповещение
+        // Сразу назначен мне (admin создал заказ с курьером) → звук + in-app баннер
         setMyOrders((prev) => mergeById(prev, [o]));
         notifyNewOrder();
+        onAssignedOrderRef.current?.(o);
       }
       return;
     }
@@ -258,6 +269,7 @@ export function useOrdersWebSocket({ unit }) {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
+    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Не удалось взять заказ');
     return data;
@@ -273,6 +285,7 @@ export function useOrdersWebSocket({ unit }) {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
+    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Не удалось отказаться от заказа');
     return data;

@@ -7,13 +7,39 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './theme';
 import { LanguageProvider } from './i18n';
 
+// Истёк ли срок действия JWT (по полю exp). Нет exp → не можем судить локально.
+function isTokenExpired(token) {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return false;
+    let p = part.replace(/-/g, '+').replace(/_/g, '/');
+    const pad = p.length % 4;
+    if (pad) p += '='.repeat(4 - pad);
+    const json =
+      typeof globalThis.atob === 'function'
+        ? globalThis.atob(p)
+        : Buffer.from(p, 'base64').toString('utf8');
+    const payload = JSON.parse(json);
+    if (!payload?.exp) return false;
+    return Date.now() >= payload.exp * 1000 - 5000;
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const [isAuth, setIsAuth] = useState(null); // null — состояние загрузки
 
   useEffect(() => {
     const checkAuth = async () => {
       const token = await AsyncStorage.getItem('authToken');
-      setIsAuth(!!token);
+      if (!token || isTokenExpired(token)) {
+        // нет токена или он истёк → на экран авторизации
+        try { await AsyncStorage.removeItem('authToken'); } catch {}
+        setIsAuth(false);
+        return;
+      }
+      setIsAuth(true);
     };
     checkAuth();
   }, []);

@@ -1,4 +1,3 @@
-// pushNotifications.js
 // Push-уведомления о новых заказах (Expo Push). Дополняет WebSocket:
 // WS — для живых обновлений при открытом приложении, push — чтобы уведомить
 // курьера, когда приложение свёрнуто или закрыто.
@@ -13,14 +12,15 @@ const PROJECT_ID = 'bddc95df-5d2b-4c34-be76-ff4fc4a333c3';
 const TOKEN_KEY = 'authToken';
 export const ORDERS_CHANNEL = 'orders';
 
-// Как показывать уведомление, когда приложение НА ПЕРЕДНЕМ ПЛАНЕ.
-// Звук не проигрываем — при открытом приложении звук уже даёт WS (notifyNewOrder),
-// иначе будет двойной сигнал. В фоне ОС покажет уведомление со звуком канала сама.
+// Поведение, когда приложение НА ПЕРЕДНЕМ ПЛАНЕ: системный баннер НЕ показываем —
+// при открытом приложении за оповещение отвечает WS (звук notifyNewOrder) и
+// внутренний баннер «заказ назначен мне». Это избегает двойного уведомления.
+// В фоне обработчик не вызывается — там ОС сама показывает push со звуком канала.
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldShowAlert: true, // для совместимости со старым API
+        shouldShowBanner: false,
+        shouldShowList: false,
+        shouldShowAlert: false,
         shouldPlaySound: false,
         shouldSetBadge: false,
     }),
@@ -43,8 +43,6 @@ export async function ensureOrdersChannel() {
 }
 
 // Запросить разрешение, получить Expo-токен и отправить его на сервер.
-// Безопасно: при любой ошибке (нет FCM, нет разрешения) просто вернёт null,
-// приложение не падает — push просто не будет работать, пока не настроен.
 export async function registerPushToken() {
     try {
         await ensureOrdersChannel();

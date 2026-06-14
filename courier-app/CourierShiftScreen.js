@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -35,6 +35,7 @@ import { useTheme } from './theme';
 import { useT } from './i18n';
 import { initOrderSound, setOrderSoundEnabled } from './notificationSound';
 import { registerPushToken, unregisterPushToken, addOrderTapListener } from './pushNotifications';
+import OrderAssignedToast from './components/OrderAssignedToast';
 
 const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
@@ -59,6 +60,16 @@ function decodeJwtPayload(token) {
     } catch {
         return null;
     }
+}
+
+// Истёк ли срок действия токена (по полю exp в JWT).
+// Нет токена → считаем «истёк». Нет exp → не можем судить локально,
+// полагаемся на 401 от сервера (возвращаем false).
+function isTokenExpired(token) {
+    if (!token) return true;
+    const p = decodeJwtPayload(token);
+    if (!p || !p.exp) return false;
+    return Date.now() >= p.exp * 1000 - 5000; // 5с запас
 }
 
 // Подсчитать количество заказов по каждой точке выдачи
@@ -88,6 +99,13 @@ export default function CourierShiftScreen({ onLogout }) {
     const [selectedOutlet, setSelectedOutlet] = useState(null);
     const [selectedOrder, setSelectedOrder] = useState(null);
 
+    // ── In-app баннер «заказ назначен мне» ───────────────────────────────────
+    const [assignedToast, setAssignedToast] = useState(null);
+
+    // Ссылка на принудительный выход (заполняется ниже, после определения forceLogout).
+    // Нужна, чтобы хук/эффекты могли вызвать выход, не завися от порядка объявления.
+    const sessionExpiredRef = useRef(null);
+
     // ── WebSocket + заказы ──────────────────────────────────────────────────
     const {
         availableOrders,
@@ -98,7 +116,11 @@ export default function CourierShiftScreen({ onLogout }) {
         fetchMy,
         assignOrder,
         releaseOrder,
-    } = useOrdersWebSocket({ unit });
+    } = useOrdersWebSocket({
+        unit,
+        onAssignedOrder: (order) => setAssignedToast(order),
+        onUnauthorized: () => sessionExpiredRef.current?.(),
+    });
 
     // ── Загрузка unit при старте ────────────────────────────────────────────
     useEffect(() => {
@@ -234,6 +256,48 @@ export default function CourierShiftScreen({ onLogout }) {
         statusFade.setValue(0.4);
         Animated.timing(statusFade, { toValue: 1, duration: 280, useNativeDriver: true }).start();
     }, [status]);
+
+    // ── Принудительный выход при истёкшем/недействительном токене ────────────
+    const loggingOutRef = useRef(false);
+    const forceLogout = useCallback(async () => {
+        if (loggingOutRef.current) return; // защита от повторных срабатываний
+        loggingOutRef.current = true;
+        try {
+            await stopTracking();
+            try { await unregisterPushToken(); } catch { }
+            await AsyncStorage.multiRemove([
+                TOKEN_KEY, UNIT_KEY, 'courierId', 'myOrders', 'onShift',
+            ]);
+        } catch { }
+        onLogout?.(); // App.js → isAuth=false → экран авторизации
+    }, [onLogout]);
+
+    // держим актуальную ссылку, чтобы хук/эффекты могли вызвать выход
+    sessionExpiredRef.current = forceLogout;
+
+    // ── Авто-проверка токена: при старте, возврате в приложение и раз в минуту ─
+    // Если токен отсутствует или истёк — сразу выкидываем на экран авторизации,
+    // даже без сетевого запроса.
+    useEffect(() => {
+        let interval;
+        const check = async () => {
+            try {
+                const token = await AsyncStorage.getItem(TOKEN_KEY);
+                if (!token || isTokenExpired(token)) {
+                    await forceLogout();
+                }
+            } catch { }
+        };
+        check();
+        const sub = AppState.addEventListener('change', (s) => {
+            if (s === 'active') check();
+        });
+        interval = setInterval(check, 60000);
+        return () => {
+            try { sub.remove(); } catch { }
+            clearInterval(interval);
+        };
+    }, [forceLogout]);
 
     // ── Выход ───────────────────────────────────────────────────────────────
     const handleExit = async () => {
@@ -554,6 +618,16 @@ export default function CourierShiftScreen({ onLogout }) {
                 onNotificationSoundChange={(enabled) => {
                     setNotificationSoundEnabled(enabled);
                     setOrderSoundEnabled(enabled);
+                }}
+            />
+
+            <OrderAssignedToast
+                order={assignedToast}
+                onDismiss={() => setAssignedToast(null)}
+                onPress={() => {
+                    setSelectedOrder(null);
+                    setSelectedOutlet(null);
+                    setActiveTab(TAB_TYPES.MY);
                 }}
             />
         </SafeAreaView>

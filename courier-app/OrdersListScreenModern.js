@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RotateCw, ChevronLeft, PlusCircle, PackageOpen } from 'lucide-react-native';
+import { RotateCw, ChevronLeft, PlusCircle, PackageOpen, Clock } from 'lucide-react-native';
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './theme';
@@ -35,6 +35,20 @@ function formatMoney(v) {
   const n = Number(v);
   if (isNaN(n)) return '—';
   return n.toFixed(2);
+}
+
+// Сколько времени прошло с момента появления заказа (по createdAt).
+// nowTs передаётся снаружи и обновляется раз в минуту → строка «оживает».
+function formatElapsed(createdAt, nowTs, t) {
+  if (!createdAt) return null;
+  const start = new Date(createdAt).getTime();
+  if (!Number.isFinite(start)) return null;
+  const diffMin = Math.floor((nowTs - start) / 60000);
+  if (diffMin < 1) return t('ordersList.justNow');
+  if (diffMin < 60) return t('ordersList.minAgo', { m: diffMin });
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  return t('ordersList.hourMin', { h, m });
 }
 
 function statusLabel(status, t) {
@@ -112,6 +126,13 @@ export default function OrdersListScreenModern({
   const [loading, setLoading] = useState(ordersProp === null);
   const [error, setError] = useState(null);
 
+  // Тик раз в минуту — для пересчёта таймера «прошло с появления заказа»
+  const [nowTs, setNowTs] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTs(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
   const fetchOrders = useCallback(async () => {
     if (ordersProp !== null) return;
 
@@ -160,6 +181,7 @@ export default function OrdersListScreenModern({
     const scheduled = formatTimeOnly(item.scheduledAt);
     const primaryTime = scheduled || created || '—';
     const timeCaption = scheduled ? t('ordersList.captionDelivery') : t('ordersList.captionAccepted');
+    const elapsed = formatElapsed(item.createdAt, nowTs, t);
     const orderNo = item.orderSeq || item.orderNo || item.id;
 
     // «Свежий» заказ — пришёл недавно (для мягкой подсветки при появлении)
@@ -205,6 +227,13 @@ export default function OrdersListScreenModern({
               {item.customer || '—'}
               {scheduled && created ? `  ·  ${t('ordersList.acceptedAt', { time: created })}` : ''}
             </Text>
+
+            {elapsed ? (
+              <View style={styles.elapsedRow}>
+                <Clock size={12} color={COLORS.muted} strokeWidth={2.2} />
+                <Text style={styles.elapsedText}>{elapsed}</Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Право: сумма + кнопка «взять» */}
@@ -284,6 +313,7 @@ export default function OrdersListScreenModern({
         ) : (
           <FlatList
             data={data}
+            extraData={nowTs}
             keyExtractor={(it) => String(it.id)}
             renderItem={renderItem}
             contentContainerStyle={styles.listContent}
@@ -472,6 +502,19 @@ const makeStyles = (COLORS) => StyleSheet.create({
     marginTop: 3,
   },
 
+  elapsedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+
+  elapsedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+
   statusPill: {
     marginTop: 8,
     borderRadius: 999,
@@ -497,14 +540,14 @@ const makeStyles = (COLORS) => StyleSheet.create({
   },
 
   metaNum: {
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: '800',
     color: COLORS.primary,
   },
 
   metaOutlet: {
     flex: 1,
-    fontSize: 11,
+    fontSize: 14,
     fontWeight: '600',
     color: COLORS.muted,
   },

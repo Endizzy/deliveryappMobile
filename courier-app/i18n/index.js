@@ -70,6 +70,10 @@ const ru = {
         captionDelivery: 'выдача',
         captionAccepted: 'принят',
         acceptedAt: 'принят {{time}}',
+        captionCurrent: 'текущий заказ',
+        justNow: 'только что',
+        minAgo: '{{m}} мин',
+        hourMin: '{{h}} ч {{m}} мин',
     },
     orderDetails: {
         order: 'ЗАКАЗ',
@@ -119,6 +123,10 @@ const ru = {
         themeDark: 'Тёмная',
         themeLight: 'Светлая',
         autosaveNote: 'Все изменения сохраняются автоматически',
+    },
+    toast: {
+        assignedTitle: 'Вам назначен заказ',
+        open: 'Открыть',
     },
 };
 
@@ -186,6 +194,10 @@ const en = {
         captionDelivery: 'delivery',
         captionAccepted: 'accepted',
         acceptedAt: 'accepted {{time}}',
+        captionCurrent: 'current order',
+        justNow: 'just now',
+        minAgo: '{{m}} min',
+        hourMin: '{{h}}h {{m}}m',
     },
     orderDetails: {
         order: 'ORDER',
@@ -235,6 +247,10 @@ const en = {
         themeDark: 'Dark',
         themeLight: 'Light',
         autosaveNote: 'All changes are saved automatically',
+    },
+    toast: {
+        assignedTitle: 'Order assigned to you',
+        open: 'Open',
     },
 };
 
@@ -302,6 +318,10 @@ const lv = {
         captionDelivery: 'izsniegšana',
         captionAccepted: 'pieņemts',
         acceptedAt: 'pieņemts {{time}}',
+        captionCurrent: 'pašreizējais',
+        justNow: 'tikko',
+        minAgo: '{{m}} min',
+        hourMin: '{{h}}h {{m}}m',
     },
     orderDetails: {
         order: 'PASŪTĪJUMS',
@@ -351,6 +371,10 @@ const lv = {
         themeDark: 'Tumšā',
         themeLight: 'Gaišā',
         autosaveNote: 'Visas izmaiņas tiek saglabātas automātiski',
+    },
+    toast: {
+        assignedTitle: 'Jums piešķirts pasūtījums',
+        open: 'Atvērt',
     },
 };
 
