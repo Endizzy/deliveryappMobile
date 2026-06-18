@@ -211,9 +211,25 @@ export default function OrderDetailsScreenModern({
   };
 
   const handleWaze = () => {
-    // const address = encodeURIComponent('Valdeķu iela 53, Riga'); fullAddress
-    const address = encodeURIComponent(safeText(fullAddress));
-    Linking.openURL(`https://waze.com/ul?q=${address}&navigate=yes`).catch(() => { });
+    const lat = Number(o.addressLat);
+    const lng = Number(o.addressLng);
+
+    let url;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      // Точнее всего — по сохранённым координатам заказа (проверенная точка)
+      url = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+    } else {
+      // Запасной вариант — нормализованный адрес (без «д.»/«к.», с городом и страной)
+      const street = safeText(o.addressStreet, '').trim();
+      const house = safeText(o.addressHouse, '').trim();
+      const building = safeText(o.addressBuilding, '').trim();
+      const main = house ? `${street} ${house}` : street;
+      const withBuilding = building ? `${main} k-${building}` : main;
+      const full = `${withBuilding}, Rīga, Latvia`.replace(/^,\s*/, '').trim();
+      url = `https://waze.com/ul?q=${encodeURIComponent(full)}&navigate=yes`;
+    }
+
+    Linking.openURL(url).catch(() => { });
   };
 
   const subtotal = formatMoney(o.amountSubtotal);
