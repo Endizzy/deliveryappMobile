@@ -119,6 +119,7 @@ export default function CourierShiftScreen({ onLogout }) {
         assignOrder,
         releaseOrder,
         completeOrder,
+        enrouteOrder,
     } = useOrdersWebSocket({
         unit,
         onAssignedOrder: (order) => setAssignedToast(order),
@@ -587,6 +588,18 @@ export default function CourierShiftScreen({ onLogout }) {
                                     },
                                 ]
                             );
+                        }}
+                        onEnrouteOrder={(orderId) => {
+                            // оптимистично ставим статус «в пути»
+                            setMyOrders((prev) =>
+                                prev.map((o) =>
+                                    o.id === orderId ? { ...o, status: 'enroute' } : o
+                                )
+                            );
+                            // фиксируем на сервере: статус → enroute + WS-оповещение (карта меняет маркер)
+                            enrouteOrder(orderId).catch((e) => {
+                                Alert.alert(t('common.error'), e?.message || t('common.error'));
+                            });
                         }}
                         onCompleteOrder={(orderId) => {
                             // оптимистично помечаем выполненным (мгновенно уходит в секцию «выполнено»)

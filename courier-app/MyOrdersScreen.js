@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Trash2, ChevronRight, CheckCircle2, Clock } from 'lucide-react-native';
+import { Trash2, ChevronRight, CheckCircle2, Clock, Navigation } from 'lucide-react-native';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import FadeInView from './components/anim/FadeInView';
@@ -38,6 +38,7 @@ export default function MyOrdersScreen({
   onOpenOrder,
   onRemoveOrder,
   onCompleteOrder,
+  onEnrouteOrder,
 }) {
   const { colors: COLORS } = useTheme();
   const { t } = useT();
@@ -129,6 +130,22 @@ export default function MyOrdersScreen({
 
         {!isCompleted && (
           <View style={styles.actions}>
+            {(item.status || '').toLowerCase() !== 'enroute' ? (
+              <PressableScale
+                style={styles.enrouteBtn}
+                onPress={() => onEnrouteOrder?.(item.id)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Navigation size={17} color={COLORS.primary} strokeWidth={2.4} />
+                <Text style={styles.enrouteBtnText}>{t('myOrders.enroute', { defaultValue: 'В путь' })}</Text>
+              </PressableScale>
+            ) : (
+              <View style={styles.enrouteBadge}>
+                <Navigation size={15} color={COLORS.primary} strokeWidth={2.6} />
+                <Text style={styles.enrouteBadgeText}>{t('myOrders.enrouteActive', { defaultValue: 'В пути' })}</Text>
+              </View>
+            )}
+
             <PressableScale
               style={styles.completeBtn}
               onPress={() => handleCompleteOrder(item.id, number)}
@@ -557,6 +574,45 @@ const makeStyles = (COLORS) => StyleSheet.create({
     backgroundColor: COLORS.softGreen,
     borderWidth: 1,
     borderColor: COLORS.softGreenBorder,
+  },
+
+  enrouteBtn: {
+    flex: 1,
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 14,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: COLORS.softBlueBorder,
+  },
+
+  enrouteBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+
+  enrouteBadge: {
+    flex: 1,
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 14,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: COLORS.softBlueBorder,
+    opacity: 0.9,
+  },
+
+  enrouteBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
 
   completeBtnText: {

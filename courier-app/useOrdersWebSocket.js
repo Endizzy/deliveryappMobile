@@ -331,6 +331,22 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     return data;
   }, []);
 
+  // ── В путь (enroute) ───────────────────────────────────────────────
+  const enrouteOrder = useCallback(async (orderId) => {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/enroute`, {
+      method:  'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Не удалось обновить заказ');
+    return data;
+  }, []);
+
   return {
     availableOrders,
     myOrders,
@@ -341,5 +357,6 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     assignOrder,
     releaseOrder,
     completeOrder,
+    enrouteOrder,
   };
 }
