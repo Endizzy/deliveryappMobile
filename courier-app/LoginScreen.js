@@ -18,6 +18,7 @@ import LottieView from 'lottie-react-native';
 import CourierAnimation from './assets/Lotties/Food Courier.json';
 import { useTheme } from './theme';
 import { useT } from './i18n';
+import { ORIGIN } from './constants';
 
 // Keyboard padding через Animated.Value — без ре-рендера LoginScreen
 function useKeyboardPadding() {
@@ -104,6 +105,20 @@ export default function LoginScreen({ onLoginSuccess }) {
     const [loading, setLoading] = useState(false);
     const keyboardPadding = useKeyboardPadding();
 
+    // Автозаполнение сохранённых логина/пароля (после перезахода или смерти токена)
+    useEffect(() => {
+        (async () => {
+            try {
+                const raw = await AsyncStorage.getItem('savedCredentials');
+                if (raw) {
+                    const c = JSON.parse(raw);
+                    if (c?.login) setLogin(c.login);
+                    if (c?.password) setPassword(c.password);
+                }
+            } catch { }
+        })();
+    }, []);
+
     const handleSubmit = async () => {
         if (!login || !password) {
             Alert.alert(t('common.error'), t('login.errEnterCredentials'));
@@ -112,7 +127,7 @@ export default function LoginScreen({ onLoginSuccess }) {
 
         setLoading(true);
         try {
-            const res = await fetch('https://deliveryappserver-1.onrender.com/api/auth/courierlogin', {
+            const res = await fetch(`${ORIGIN}/api/auth/courierlogin`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -139,6 +154,13 @@ export default function LoginScreen({ onLoginSuccess }) {
                     Alert.alert(t('common.error'), t('login.errNoToken'));
                 } else {
                     await AsyncStorage.setItem('authToken', token);
+                    // Запоминаем логин/пароль для автозаполнения при следующем входе
+                    try {
+                        await AsyncStorage.setItem(
+                            'savedCredentials',
+                            JSON.stringify({ login, password })
+                        );
+                    } catch { }
                     onLoginSuccess && onLoginSuccess();
                 }
             }
