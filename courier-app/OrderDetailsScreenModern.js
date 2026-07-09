@@ -133,8 +133,10 @@ function buildAptLine(o) {
 export default function OrderDetailsScreenModern({
   order,
   outletName = '—',
+  myUnitId,
   onBack,
   onTake,
+  onEnroute,
   onCall,
 }) {
   const { colors: COLORS } = useTheme();
@@ -185,9 +187,15 @@ export default function OrderDetailsScreenModern({
   const st = statusLabel(o.status, t);
   const stTone = toneStyles(st.tone);
 
-  // «Взять» показываем только для доступных заказов (не завершён/не отменён)
   const statusLc = (o.status || '').toLowerCase();
-  const canTake = !!onTake && statusLc !== 'completed' && statusLc !== 'cancelled';
+  const isMine = myUnitId != null && String(o.courierId) === String(myUnitId);
+
+  // «Взять» — только для чужих/свободных заказов (не завершён/не отменён)
+  const canTake =
+    !!onTake && !isMine && statusLc !== 'completed' && statusLc !== 'cancelled';
+  // «В путь» — для своего заказа, который ещё не в пути
+  const canEnroute =
+    !!onEnroute && isMine && (statusLc === 'new' || statusLc === 'ready');
 
   const titleNumber =
     o.orderSeq ? `№${o.orderSeq}` :
@@ -373,6 +381,20 @@ export default function OrderDetailsScreenModern({
                 <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
               </View>
               <Text style={[styles.actionText, styles.actionTextPrimary]}>{t('orderDetails.take')}</Text>
+            </PressableScale>
+          )}
+
+          {canEnroute && (
+            <PressableScale
+              style={[styles.actionBtn, styles.actionBtnPrimary]}
+              onPress={() => onEnroute?.(o)}
+            >
+              <View style={[styles.actionIconCircle, styles.actionIconCirclePrimary]}>
+                <Navigation size={18} color={COLORS.onPrimary} strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.actionText, styles.actionTextPrimary]}>
+                {t('orderDetails.enroute', { defaultValue: 'В путь' })}
+              </Text>
             </PressableScale>
           )}
         </View>

@@ -522,6 +522,7 @@ export default function CourierShiftScreen({ onLogout }) {
                             <OrderDetailsScreenModern
                                 order={selectedOrder}
                                 outletName={selectedOutlet?.name ?? '—'}
+                                myUnitId={unit?.unitId}
                                 onBack={() => setSelectedOrder(null)}
                                 onTake={(order) => {
                                     (async () => {
@@ -529,6 +530,25 @@ export default function CourierShiftScreen({ onLogout }) {
                                             await assignOrder(order.id);
                                             setSelectedOrder(null);
                                             Alert.alert(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
+                                        } catch (e) {
+                                            Alert.alert(t('common.error'), e.message);
+                                        }
+                                    })();
+                                }}
+                                onEnroute={(order) => {
+                                    (async () => {
+                                        try {
+                                            await enrouteOrder(order.id);
+                                            setMyOrders((prev) =>
+                                                prev.map((o) =>
+                                                    o.id === order.id ? { ...o, status: 'enroute' } : o
+                                                )
+                                            );
+                                            setSelectedOrder(null);
+                                            Alert.alert(
+                                                t('orderDetails.enrouteOkTitle', { defaultValue: 'В пути' }),
+                                                t('orderDetails.enrouteOkBody', { defaultValue: 'Статус заказа обновлён' })
+                                            );
                                         } catch (e) {
                                             Alert.alert(t('common.error'), e.message);
                                         }
@@ -588,18 +608,6 @@ export default function CourierShiftScreen({ onLogout }) {
                                     },
                                 ]
                             );
-                        }}
-                        onEnrouteOrder={(orderId) => {
-                            // оптимистично ставим статус «в пути»
-                            setMyOrders((prev) =>
-                                prev.map((o) =>
-                                    o.id === orderId ? { ...o, status: 'enroute' } : o
-                                )
-                            );
-                            // фиксируем на сервере: статус → enroute + WS-оповещение (карта меняет маркер)
-                            enrouteOrder(orderId).catch((e) => {
-                                Alert.alert(t('common.error'), e?.message || t('common.error'));
-                            });
                         }}
                         onCompleteOrder={(orderId) => {
                             // оптимистично помечаем выполненным (мгновенно уходит в секцию «выполнено»)
