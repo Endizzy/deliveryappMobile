@@ -267,7 +267,9 @@ export default function CourierShiftScreen({ onLogout }) {
         if (loggingOutRef.current) return; // защита от повторных срабатываний
         loggingOutRef.current = true;
         try {
-            await stopTracking();
+            // тоже с прощальным off_shift — на сервере есть и TTL-очистка
+            // на случай, если токен уже истёк и пинг не пройдёт
+            try { await stopShift(); } catch { await stopTracking(); }
             try { await unregisterPushToken(); } catch { }
             await AsyncStorage.multiRemove([
                 TOKEN_KEY, UNIT_KEY, 'courierId', 'myOrders', 'onShift',
@@ -306,7 +308,9 @@ export default function CourierShiftScreen({ onLogout }) {
     // ── Выход ───────────────────────────────────────────────────────────────
     const handleExit = async () => {
         try {
-            await stopTracking();
+            // stopShift = стоп трекинга + прощальный пинг off_shift,
+            // иначе метка курьера остаётся висеть на карте у админов
+            await stopShift();
             await unregisterPushToken(); // снять токен на сервере, пока есть авторизация
 
             await AsyncStorage.removeItem(TOKEN_KEY);
@@ -381,10 +385,14 @@ export default function CourierShiftScreen({ onLogout }) {
                     pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
                 } catch { }
 
-                if (courierId && pos) {
+                const token = await AsyncStorage.getItem(TOKEN_KEY);
+                if (courierId && pos && token) {
                     fetch(API_LOCATION, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`,
+                        },
                         body: JSON.stringify({
                             courierId: Number(courierId),
                             lat: pos.coords.latitude,

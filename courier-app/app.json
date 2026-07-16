@@ -18,9 +18,12 @@
         "NSLocationWhenInUseUsageDescription": "Приложению нужен доступ к геолокации, чтобы передавать ваше местоположение при доставке.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Приложению нужен доступ к геолокации в фоне, чтобы администратор мог отслеживать вас во время смены.",
         "UIBackgroundModes": [
+          "location",
           "location"
-        ]
-      }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.endizzy.courierapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -37,7 +40,9 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {

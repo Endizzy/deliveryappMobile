@@ -17,19 +17,21 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
         // Берём последний фикс
         const loc = locations[locations.length - 1];
 
-        // Попытка получить courierId: сначала отдельный ключ, затем — объект unit
+        // Попытка получить courierId: сначала отдельный ключ, затем — объект unit.
+        // Ник берём тоже: сервер хранит имена в памяти, и после его рестарта
+        // курьер без ника отображался бы на карте как «#9 без имени».
         let courierId = await AsyncStorage.getItem('courierId');
-        if (!courierId) {
-            const rawUnit = await AsyncStorage.getItem('unit');
-            if (rawUnit) {
-                try {
-                    const parsed = JSON.parse(rawUnit);
-                    if (parsed && (parsed.unitId || parsed.unitId === 0)) {
-                        courierId = String(parsed.unitId);
-                    }
-                } catch (e) {
-                    // ignore
+        let courierNickname = null;
+        const rawUnit = await AsyncStorage.getItem('unit');
+        if (rawUnit) {
+            try {
+                const parsed = JSON.parse(rawUnit);
+                if (!courierId && parsed && (parsed.unitId || parsed.unitId === 0)) {
+                    courierId = String(parsed.unitId);
                 }
+                courierNickname = parsed?.unitNickname ?? null;
+            } catch (e) {
+                // ignore
             }
         }
 
@@ -50,6 +52,11 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
 
         if (!courierId) return;
 
+        // Токен обязателен: /api/location на сервере защищён авторизацией,
+        // чтобы разлогиненное приложение не могло слать координаты.
+        const token = await AsyncStorage.getItem('authToken');
+        if (!token) return;
+
         const body = {
             type: 'location',
             courierId: Number(courierId),
@@ -58,12 +65,16 @@ TaskManager.defineTask(TASK_NAME, async ({ data, error }) => {
             speedKmh: typeof loc.coords.speed === 'number' ? loc.coords.speed * 3.6 : null,
             status: 'on_shift',
             timestamp: new Date(loc.timestamp || Date.now()).toISOString(),
+            courierNickname,
         };
 
         // Отправляем через REST на сервер; без await — чтобы не блокировать
         fetch(API_LOCATION, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
             body: JSON.stringify(body),
         }).catch(() => {});
     } catch (e) {
