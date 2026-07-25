@@ -14,11 +14,13 @@ import {
     StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import LottieView from 'lottie-react-native';
 import CourierAnimation from './assets/Lotties/Food Courier.json';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import { ORIGIN } from './constants';
+import { TASK_NAME } from './locationTask';
 
 // Keyboard padding через Animated.Value — без ре-рендера LoginScreen
 function useKeyboardPadding() {
@@ -154,6 +156,16 @@ export default function LoginScreen({ onLoginSuccess }) {
                     Alert.alert(t('common.error'), t('login.errNoToken'));
                 } else {
                     await AsyncStorage.setItem('authToken', token);
+
+                    // Новый вход = смена ВСЕГДА выключена. Сбрасываем флаг смены и
+                    // глушим возможную «зомби»-подписку геолокации, чтобы гео не
+                    // включалась до нажатия «Начать смену».
+                    try { await AsyncStorage.removeItem('onShift'); } catch { }
+                    try {
+                        const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
+                        if (started) await Location.stopLocationUpdatesAsync(TASK_NAME);
+                    } catch { }
+
                     // Запоминаем логин/пароль для автозаполнения при следующем входе
                     try {
                         await AsyncStorage.setItem(

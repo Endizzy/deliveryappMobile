@@ -18,7 +18,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TASK_NAME } from './locationTask';
-import { API_LOCATION } from './constants';
+import { API_LOCATION, ORIGIN } from './constants';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -73,13 +73,42 @@ function isTokenExpired(token) {
     return Date.now() >= p.exp * 1000 - 5000; // 5с запас
 }
 
-// Подсчитать количество заказов по каждой точке выдачи
-function getOutletCounts(orders) {
-    return orders.reduce((acc, o) => {
-        const key = (o.outlet || '').toLowerCase();
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-    }, {});
+// Список точек выдачи = все точки (админ-аккаунты) с сервера, всегда видимы.
+// Счётчик заказов берём из самих заказов (0, если заказов нет).
+// Плюс подстраховка: если в заказе есть точка, которой нет в серверном списке
+// (переименовали/удалили админа) — всё равно показываем, чтобы заказ не потерялся.
+function buildOutlets(orders, pickupPoints) {
+    const counts = new Map(); // lowerKey -> count
+    for (const o of orders) {
+        const name = String(o.outlet || '').trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        counts.set(key, (counts.get(key) || 0) + 1);
+    }
+
+    const seen = new Set();
+    const outlets = [];
+
+    // 1) точки с сервера — видны всегда, даже с нулём
+    for (const p of pickupPoints || []) {
+        const name = String(p.nickname || '').trim();
+        if (!name) continue;
+        const key = name.toLowerCase();
+        seen.add(key);
+        outlets.push({ id: `pp-${p.id}`, name, serverName: name, count: counts.get(key) || 0 });
+    }
+
+    // 2) точки из заказов, которых нет в серверном списке
+    for (const [key, count] of counts) {
+        if (seen.has(key)) continue;
+        const original = orders.find(
+            (o) => String(o.outlet || '').trim().toLowerCase() === key
+        );
+        const name = original ? String(original.outlet).trim() : key;
+        outlets.push({ id: `x-${key}`, name, serverName: name, count });
+    }
+
+    return outlets.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export default function CourierShiftScreen({ onLogout }) {
@@ -91,6 +120,11 @@ export default function CourierShiftScreen({ onLogout }) {
     const [status, setStatus] = useState('offline');
     const [loading, setLoading] = useState(true);
 
+    // Зеркало статуса в ref — источник правды для текущей сессии.
+    // reconcile опирается на него, а не на онлайн-флаг из хранилища.
+    const statusRef = useRef('offline');
+    useEffect(() => { statusRef.current = status; }, [status]);
+
     // ── Settings state ──────────────────────────────────────────────────────
     const [settingsVisible, setSettingsVisible] = useState(false);
     const [reportVisible, setReportVisible] = useState(false);
@@ -100,6 +134,9 @@ export default function CourierShiftScreen({ onLogout }) {
     const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
     const [selectedOutlet, setSelectedOutlet] = useState(null);
     const [selectedOrder, setSelectedOrder] = useState(null);
+
+    // Точки выдачи (админ-аккаунты компании) — тянем с сервера, видны всегда
+    const [pickupPoints, setPickupPoints] = useState([]);
 
     // ── In-app баннер «заказ назначен мне» ───────────────────────────────────
     const [assignedToast, setAssignedToast] = useState(null);
@@ -187,22 +224,19 @@ export default function CourierShiftScreen({ onLogout }) {
     };
 
     // ── Сверка состояния при запуске и возврате в приложение ─────────────────
-    // Если смена не активна, но подписка ОС всё ещё «висит» (воскрешена ОС),
-    // принудительно её отключаем. Так геолокация не может идти без активной смены.
+    // Геолокация включается ТОЛЬКО кнопкой «Начать смену» в текущей сессии.
+    // Никакого авто-возобновления по флагу из хранилища: свежий запуск = смена
+    // выключена. Если смена НЕ активна в этой сессии, но подписка ОС «висит»
+    // (воскрешена ОС / зомби после прошлого входа) — принудительно её глушим.
     useEffect(() => {
         const reconcile = async () => {
+            // Активная смена в ЭТОЙ сессии (нажали «Начать смену») — не трогаем.
+            if (statusRef.current === 'online') return;
             try {
-                const onShift = await AsyncStorage.getItem('onShift');
-                if (onShift === '1') {
-                    setStatus('online');
-                    return;
-                }
-                setStatus('offline');
-                let started = false;
-                try { started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME); } catch { }
-                if (started) {
-                    try { await Location.stopLocationUpdatesAsync(TASK_NAME); } catch { }
-                }
+                // гарантируем, что смена выключена и фоновой подписки нет
+                await AsyncStorage.removeItem('onShift');
+                const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
+                if (started) await Location.stopLocationUpdatesAsync(TASK_NAME);
             } catch { }
         };
 
@@ -234,6 +268,27 @@ export default function CourierShiftScreen({ onLogout }) {
         });
         return unsubscribe;
     }, []);
+
+    // ── Точки выдачи: список админ-аккаунтов компании ────────────────────────
+    const fetchPickupPoints = useCallback(async () => {
+        try {
+            const token = await AsyncStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            const res = await fetch(`${ORIGIN}/api/order-support/pickup-points`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.status === 401) { sessionExpiredRef.current?.(); return; }
+            const data = await res.json();
+            if (data?.ok && Array.isArray(data.items)) setPickupPoints(data.items);
+        } catch { }
+    }, []);
+
+    useEffect(() => { fetchPickupPoints(); }, [fetchPickupPoints]);
+
+    // Обновляем список точек при открытии вкладки «Все»
+    useEffect(() => {
+        if (activeTab === TAB_TYPES.ALL) fetchPickupPoints();
+    }, [activeTab, fetchPickupPoints]);
 
     // ── Анимации статуса ─────────────────────────────────────────────────────
     // Пульс индикатора подключения (пока идёт connecting).
@@ -371,6 +426,12 @@ export default function CourierShiftScreen({ onLogout }) {
 
     const stopShift = async () => {
         try {
+            // 0) Берём ПОСЛЕДНЮЮ ИЗВЕСТНУЮ позицию из кэша ДО остановки.
+            //    getLastKnownPositionAsync не включает GPS, поэтому индикатор
+            //    геолокации не «мигает» обратно после остановки смены.
+            let pos = null;
+            try { pos = await Location.getLastKnownPositionAsync(); } catch { }
+
             // 1) Сразу глушим смену и фоновую подписку (fail-closed).
             //    Делаем это ДО прощального пинга, чтобы геолокация точно прекратилась,
             //    даже если что-то ниже упадёт.
@@ -378,15 +439,12 @@ export default function CourierShiftScreen({ onLogout }) {
             setStatus('offline');
 
             // 2) Прощальный пинг off_shift — чтобы клиент убрал курьера с карты.
+            //    Шлём ВСЕГДА (координаты необязательны): сервер по off_shift
+            //    убирает курьера сразу, даже если позиции нет.
             try {
                 const courierId = unit?.unitId;
-                let pos = null;
-                try {
-                    pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-                } catch { }
-
                 const token = await AsyncStorage.getItem(TOKEN_KEY);
-                if (courierId && pos && token) {
+                if (courierId && token) {
                     fetch(API_LOCATION, {
                         method: 'POST',
                         headers: {
@@ -395,11 +453,11 @@ export default function CourierShiftScreen({ onLogout }) {
                         },
                         body: JSON.stringify({
                             courierId: Number(courierId),
-                            lat: pos.coords.latitude,
-                            lng: pos.coords.longitude,
-                            speedKmh: typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
+                            lat: pos ? pos.coords.latitude : null,
+                            lng: pos ? pos.coords.longitude : null,
+                            speedKmh: pos && typeof pos.coords.speed === 'number' ? pos.coords.speed * 3.6 : null,
                             status: 'off_shift',
-                            timestamp: new Date(pos.timestamp || Date.now()).toISOString(),
+                            timestamp: new Date((pos && pos.timestamp) || Date.now()).toISOString(),
                             courierNickname: unit?.unitNickname ?? null,
                         }),
                     }).catch(() => { });
@@ -569,7 +627,8 @@ export default function CourierShiftScreen({ onLogout }) {
                         ) : !selectedOutlet ? (
                             <AllOrdersScreen
                                 useSafeArea={false}
-                                outletCounts={getOutletCounts(availableOrders)}
+                                outlets={buildOutlets(availableOrders, pickupPoints)}
+                                totalCount={availableOrders.length}
                                 onOpenOutlet={(o) => setSelectedOutlet(o)}
                             />
                         ) : (

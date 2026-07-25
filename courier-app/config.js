@@ -1,1 +1,1 @@
-export const API_URL = "https://deliveryappserver-eu.onrender.com";
+export const API_URL = "https://api.developfuture.id.lv";

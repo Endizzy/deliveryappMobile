@@ -15,30 +15,23 @@ import { useT } from './i18n';
 import FadeInView from './components/anim/FadeInView';
 import PressableScale from './components/anim/PressableScale';
 
-// Список точек выдачи — serverName должен совпадать со значением поля outlet в заказе
-const OUTLETS = [
-  { id: 'all', name: 'Все точки', serverName: null, isAll: true },
-  { id: 'briana', name: 'Briana', serverName: 'Briana' },
-  { id: 'saga', name: 'Saga', serverName: 'Saga' },
-  { id: 'zep', name: 'Зепчик', serverName: 'Ziepniekkalns' },
-];
-
 const AllOrdersScreen = ({
   useSafeArea = true,
   onOpenOutlet,
-  outletCounts = {},
+  outlets = [],
+  totalCount = 0,
 }) => {
   const { colors: COLORS } = useTheme();
   const { t } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
-  const getCount = (item) => {
-    if (item.isAll) {
-      return Object.values(outletCounts).reduce((sum, v) => sum + v, 0);
-    }
-    const key = (item.serverName || item.name || '').toLowerCase();
-    return outletCounts[key] ?? 0;
-  };
+  // Карточка «Все точки» + динамические точки из заказов
+  const data = useMemo(
+    () => [{ id: 'all', name: t('allOrders.allOutlets'), isAll: true }, ...outlets],
+    [outlets, t]
+  );
+
+  const getCount = (item) => (item.isAll ? totalCount : (item.count ?? 0));
 
   const renderItem = ({ item, index }) => {
     const count = getCount(item);
@@ -101,7 +94,7 @@ const AllOrdersScreen = ({
 
       <View style={styles.content}>
         <FlatList
-          data={OUTLETS}
+          data={data}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
