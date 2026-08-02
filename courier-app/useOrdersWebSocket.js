@@ -1,5 +1,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, ORIGIN } from './constants';
 import { notifyNewOrder } from './notificationSound';
@@ -223,31 +224,60 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
   }, []);
 
   // ── WebSocket: подключение с авто-реконнектом ──────────────────────
+  //
+  // Гарантия консистентности: на КАЖДЫЙ (ре)коннект — полный REST-ресинк
+  // (fetchAvailable + fetchMy). Всё, что пришло за время разрыва (приложение
+  // было свёрнуто, смена Wi-Fi→LTE), перекрывается свежим снапшотом.
+  //
+  // AppState: при возврате приложения в foreground — немедленный ресинк
+  // по REST + принудительный реконнект, если сокет умер в фоне.
   useEffect(() => {
     if (!unit) return;
 
     let ws;
     let reconnectTimer;
+    let attempts  = 0;
     let destroyed = false;
+
+    const scheduleReconnect = () => {
+      if (destroyed) return;
+      clearTimeout(reconnectTimer);
+      // backoff с потолком 15 c + джиттер, чтобы не долбить сервер синхронно
+      const delay =
+        Math.min(15000, 1000 * 2 ** Math.min(attempts, 4)) +
+        Math.floor(Math.random() * 300);
+      attempts += 1;
+      reconnectTimer = setTimeout(connect, delay);
+    };
 
     const connect = async () => {
       try {
-        const token      = await AsyncStorage.getItem(TOKEN_KEY);
-        const jwtPayload = token ? decodeJwtPayload(token) : null;
+        // защита от параллельного подключения (таймер реконнекта + AppState)
+        const cur = wsRef.current;
+        if (cur && cur.readyState <= 1) return; // CONNECTING или OPEN — уже есть
+
+        const token = await AsyncStorage.getItem(TOKEN_KEY);
+        if (!token) { onUnauthorizedRef.current?.(); return; }
+        const jwtPayload = decodeJwtPayload(token);
         const companyId  = jwtPayload?.companyId ?? jwtPayload?.company_id ?? null;
 
         ws = new WebSocket(WS_URL);
         wsRef.current = ws;
 
         ws.onopen = () => {
+          attempts = 0;
           setConnected(true);
           ws.send(JSON.stringify({
             type:            'hello',
             role:            'courier',
+            token,           // ← сервер авторизует hello по JWT
             courierId:       unit.unitId,
             courierNickname: unit.unitNickname ?? null,
             companyId,
           }));
+          // Ресинк на каждый (ре)коннект — ключ к консистентности
+          fetchAvailable();
+          fetchMy();
         };
 
         ws.onmessage = (evt) => {
@@ -257,9 +287,14 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
           } catch {}
         };
 
-        ws.onclose = () => {
+        ws.onclose = (e) => {
           setConnected(false);
-          if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
+          if (e?.code === 4401) {
+            // токен невалиден/просрочен — реконнект бессмыслен, нужен перелогин
+            onUnauthorizedRef.current?.();
+            return;
+          }
+          scheduleReconnect();
         };
 
         ws.onerror = (e) => {
@@ -268,17 +303,30 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
         };
       } catch (e) {
         console.warn('[WS] connect error', e);
-        if (!destroyed) reconnectTimer = setTimeout(connect, 2000);
+        scheduleReconnect();
       }
     };
 
     connect();
-    fetchAvailable();
-    fetchMy();
+
+    // Возврат в foreground: состояние — сразу по REST, сокет — проверить/поднять
+    const appStateSub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active' || destroyed) return;
+      fetchAvailable();
+      fetchMy();
+      const sock = wsRef.current;
+      // CONNECTING(0)/OPEN(1) — жив; CLOSING(2)/CLOSED(3)/нет — переподключаем
+      if (!sock || sock.readyState > 1) {
+        attempts = 0;
+        clearTimeout(reconnectTimer);
+        connect();
+      }
+    });
 
     return () => {
       destroyed = true;
       clearTimeout(reconnectTimer);
+      try { appStateSub.remove(); } catch {}
       try { ws?.close(); } catch {}
     };
   }, [unit, handleMessage, fetchAvailable, fetchMy]);
