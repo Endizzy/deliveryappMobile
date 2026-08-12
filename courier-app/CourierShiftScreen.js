@@ -642,6 +642,17 @@ export default function CourierShiftScreen({ onLogout }) {
                                 onBack={() => setSelectedOutlet(null)}
                                 onRefresh={fetchAvailable}
                                 onOpenOrder={(order) => setSelectedOrder(order)}
+                                onActionPress={(order) => {
+                                    // «+» = взять заказ на себя (как кнопка «Взять» в деталях)
+                                    (async () => {
+                                        try {
+                                            await assignOrder(order.id || order.order_id);
+                                            Alert.alert(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
+                                        } catch (e) {
+                                            Alert.alert(t('common.error'), e.message);
+                                        }
+                                    })();
+                                }}
                             />
                         )}
                     </View>
@@ -675,6 +686,18 @@ export default function CourierShiftScreen({ onLogout }) {
                                     },
                                 ]
                             );
+                        }}
+                        onEnrouteOrder={(orderId) => {
+                            // оптимистично ставим статус «в пути» → кнопка сменится на «Готово»
+                            setMyOrders((prev) =>
+                                prev.map((o) =>
+                                    o.id === orderId ? { ...o, status: 'enroute' } : o
+                                )
+                            );
+                            // фиксируем на сервере: статус → enroute + WS-оповещение (карта)
+                            enrouteOrder(orderId).catch((e) => {
+                                Alert.alert(t('common.error'), e?.message || t('common.error'));
+                            });
                         }}
                         onCompleteOrder={(orderId) => {
                             // оптимистично помечаем выполненным (мгновенно уходит в секцию «выполнено»)

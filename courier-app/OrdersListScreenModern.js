@@ -31,12 +31,6 @@ function formatTimeOnly(dateStr) {
   }
 }
 
-function formatMoney(v) {
-  const n = Number(v);
-  if (isNaN(n)) return '—';
-  return n.toFixed(2);
-}
-
 // Сколько времени прошло с момента появления заказа (по createdAt).
 // nowTs передаётся снаружи и обновляется раз в минуту → строка «оживает».
 function formatElapsed(createdAt, nowTs, t) {
@@ -178,11 +172,16 @@ export default function OrdersListScreenModern({
   const renderItem = ({ item, index }) => {
     const status = statusLabel(item.status, t);
     const created = formatTimeOnly(item.createdAt);
-    const scheduled = formatTimeOnly(item.scheduledAt);
-    const primaryTime = scheduled || created || '—';
-    const timeCaption = scheduled ? t('ordersList.captionDelivery') : t('ordersList.captionAccepted');
     const elapsed = formatElapsed(item.createdAt, nowTs, t);
     const orderNo = item.orderSeq || item.orderNo || item.id;
+    const outletLabel = item.outlet || outletName;
+
+    // Мета-строка: № · точка · клиент (без пустых сегментов)
+    const metaText = [
+      `№${orderNo}`,
+      outletLabel || null,
+      item.customer || null,
+    ].filter(Boolean).join(' · ');
 
     // «Свежий» заказ — пришёл недавно (для мягкой подсветки при появлении)
     const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : NaN;
@@ -195,59 +194,51 @@ export default function OrdersListScreenModern({
           onPress={() => onOpenOrder?.({ id: item.id || item.order_id, ...item })}
         >
           <FreshHighlight active={isFresh} color={COLORS.softBlue} />
-          <View style={styles.cardRow}>
-          {/* Левый блок: время выдачи + статус */}
-          <View style={styles.timeBox}>
-            <Text style={styles.timeBig}>{primaryTime}</Text>
-            <Text style={styles.timeCaption}>{timeCaption}</Text>
-            <View
-              style={[
-                styles.statusPill,
-                { backgroundColor: status.bg, borderColor: status.border },
-              ]}
-            >
-              <Text style={[styles.statusPillText, { color: status.color }]} numberOfLines={1}>
-                {status.text}
+
+          {/* Цветная полоса статуса слева */}
+          <View style={[styles.stripe, { backgroundColor: status.color }]} />
+
+          <View style={styles.cardBody}>
+            {/* Строка 1: адрес + кнопка «взять» */}
+            <View style={styles.rowTop}>
+              <Text style={styles.address} numberOfLines={1}>
+                {item.address || '—'}
               </Text>
+              <PressableScale
+                style={styles.takeBtn}
+                onPress={() => onActionPress?.(item)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                scaleTo={0.9}
+              >
+                <PlusCircle size={18} color={COLORS.onPrimary} strokeWidth={2.4} />
+              </PressableScale>
             </View>
-          </View>
 
-          {/* Центр: №/точка, адрес, клиент */}
-          <View style={styles.infoCol}>
-            <View style={styles.metaTop}>
-              <Text style={styles.metaNum}>№{orderNo}</Text>
-              <Text style={styles.metaOutlet} numberOfLines={1}> · {item.outlet || outletName}</Text>
-            </View>
-
-            <Text style={styles.address} numberOfLines={2}>
-              {item.address || '—'}
+            {/* Строка 2: № · точка · клиент */}
+            <Text style={styles.metaLine} numberOfLines={1}>
+              {metaText}
             </Text>
 
-            <Text style={styles.customerLine} numberOfLines={1}>
-              {item.customer || '—'}
-              {scheduled && created ? `  ·  ${t('ordersList.acceptedAt', { time: created })}` : ''}
-            </Text>
-
-            {elapsed ? (
-              <View style={styles.elapsedRow}>
-                <Clock size={12} color={COLORS.muted} strokeWidth={2.2} />
-                <Text style={styles.elapsedText}>{elapsed}</Text>
+            {/* Строка 3: время создания | сколько висит + статус */}
+            <View style={styles.rowBottom}>
+              <View style={styles.timeChip}>
+                <Clock size={13} color={COLORS.primary} strokeWidth={2.2} />
+                <Text style={styles.timeCreated}>{created || '—'}</Text>
+                {elapsed ? <Text style={styles.timeDivider}>|</Text> : null}
+                {elapsed ? <Text style={styles.timeElapsed}>{elapsed}</Text> : null}
               </View>
-            ) : null}
-          </View>
 
-          {/* Право: сумма + кнопка «взять» */}
-          <View style={styles.rightCol}>
-            <Text style={styles.price}>{formatMoney(item.amountTotal)} €</Text>
-            <PressableScale
-              style={styles.takeBtn}
-              onPress={() => onActionPress?.(item)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              scaleTo={0.9}
-            >
-              <PlusCircle size={20} color={COLORS.onPrimary} strokeWidth={2.4} />
-            </PressableScale>
-          </View>
+              <View
+                style={[
+                  styles.statusPill,
+                  { backgroundColor: status.bg, borderColor: status.border },
+                ]}
+              >
+                <Text style={[styles.statusPillText, { color: status.color }]} numberOfLines={1}>
+                  {status.text}
+                </Text>
+              </View>
+            </View>
           </View>
         </PressableScale>
       </FadeInView>
@@ -456,67 +447,106 @@ const makeStyles = (COLORS) => StyleSheet.create({
   },
 
   card: {
+    position: 'relative',
     backgroundColor: COLORS.card,
-    borderRadius: 22,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.lineSoft,
-    marginBottom: 12,
+    marginBottom: 8,
     overflow: 'hidden',
     shadowColor: COLORS.shadow,
-    shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 22,
-    elevation: 10,
+    shadowOpacity: Platform.OS === 'ios' ? 0.18 : 0.12,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 4,
   },
 
-  cardRow: {
+  // Цветная полоса статуса слева
+  stripe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+  },
+
+  cardBody: {
+    paddingVertical: 9,
+    paddingRight: 11,
+    paddingLeft: 15,
+  },
+
+  rowTop: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 13,
-    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
 
-  timeBox: {
-    minWidth: 74,
+  address: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  takeBtn: {
+    // width: 28,
+    // height: 28,
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  metaLine: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginBottom: 4
+  },
+
+  rowBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 7,
+  },
+
+  timeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: COLORS.softBlue,
     borderWidth: 1,
     borderColor: COLORS.softBlueBorder,
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
   },
 
-  timeBig: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.text,
-    lineHeight: 22,
-  },
-
-  timeCaption: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: COLORS.muted,
-    marginTop: 3,
-  },
-
-  elapsedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-  },
-
-  elapsedText: {
-    fontSize: 11,
+  timeCreated: {
+    fontSize: 12,
     fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  timeDivider: {
+    fontSize: 12,
     color: COLORS.muted,
+  },
+
+  timeElapsed: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.warning,
   },
 
   statusPill: {
-    marginTop: 8,
     borderRadius: 999,
     paddingHorizontal: 9,
     paddingVertical: 3,
@@ -524,67 +554,8 @@ const makeStyles = (COLORS) => StyleSheet.create({
   },
 
   statusPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-
-  infoCol: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'center',
-  },
-
-  metaTop: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-
-  metaNum: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.primary,
-  },
-
-  metaOutlet: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.muted,
-  },
-
-  address: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: COLORS.text,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-
-  customerLine: {
     fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.muted,
-    marginTop: 4,
-  },
-
-  rightCol: {
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-
-  price: {
-    fontSize: 16,
     fontWeight: '800',
-    color: COLORS.text,
-  },
-
-  takeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   centerState: {

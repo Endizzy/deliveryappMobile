@@ -1,16 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   StatusBar,
   Platform,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Trash2, ChevronRight, CheckCircle2, Clock } from 'lucide-react-native';
+import { Trash2, ChevronRight, CheckCircle2, Clock, Navigation } from 'lucide-react-native';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import FadeInView from './components/anim/FadeInView';
@@ -22,14 +21,43 @@ function formatTimeOnly(dateStr) {
   try {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return null;
-
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
-
     return `${hours}:${minutes}`;
   } catch {
     return null;
   }
+}
+
+// Сколько времени прошло с момента появления заказа (по createdAt).
+function formatElapsed(createdAt, nowTs, t) {
+  if (!createdAt) return null;
+  const start = new Date(createdAt).getTime();
+  if (!Number.isFinite(start)) return null;
+  const diffMin = Math.floor((nowTs - start) / 60000);
+  if (diffMin < 1) return t('ordersList.justNow');
+  if (diffMin < 60) return t('ordersList.minAgo', { m: diffMin });
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  return t('ordersList.hourMin', { h, m });
+}
+
+// Цвет/подпись статуса (тот же язык, что и на экране «Все заказы»)
+function statusMeta(status, t) {
+  const s = (status || '').toLowerCase();
+  if (s === 'new') {
+    return { text: t('ordersList.statusNew'), color: '#2F8CFF', bg: 'rgba(47, 140, 255, 0.12)', border: 'rgba(47, 140, 255, 0.22)' };
+  }
+  if (s === 'ready') {
+    return { text: t('ordersList.statusReady'), color: '#4ADE80', bg: 'rgba(74, 222, 128, 0.12)', border: 'rgba(74, 222, 128, 0.20)' };
+  }
+  if (s === 'enroute') {
+    return { text: t('ordersList.statusEnroute'), color: '#FBBF24', bg: 'rgba(251, 191, 36, 0.12)', border: 'rgba(251, 191, 36, 0.20)' };
+  }
+  if (s === 'cancelled') {
+    return { text: t('ordersList.statusCancelled'), color: '#FF7B7B', bg: 'rgba(255, 123, 123, 0.12)', border: 'rgba(255, 123, 123, 0.20)' };
+  }
+  return { text: String(status || '—').toUpperCase(), color: '#8FA3B8', bg: 'rgba(143, 163, 184, 0.12)', border: 'rgba(143, 163, 184, 0.20)' };
 }
 
 export default function MyOrdersScreen({
@@ -37,11 +65,19 @@ export default function MyOrdersScreen({
   useSafeArea = true,
   onOpenOrder,
   onRemoveOrder,
+  onEnrouteOrder,
   onCompleteOrder,
 }) {
   const { colors: COLORS } = useTheme();
   const { t } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
+  // Тик раз в минуту — чтобы таймер «сколько висит» оживал
+  const [nowTs, setNowTs] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTs(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
 
   const { active, completed } = useMemo(() => {
     const isDone = (o) => o.completed || (o.status || '').toLowerCase() === 'completed';
@@ -58,16 +94,8 @@ export default function MyOrdersScreen({
       t('myOrders.closeTitle'),
       t('myOrders.closeBody', { number: orderNumber }),
       [
-        {
-          text: t('common.cancel'),
-          onPress: () => { },
-          style: 'cancel',
-        },
-        {
-          text: t('myOrders.yesDone'),
-          onPress: () => onCompleteOrder?.(orderId),
-          style: 'destructive',
-        },
+        { text: t('common.cancel'), onPress: () => { }, style: 'cancel' },
+        { text: t('myOrders.yesDone'), onPress: () => onCompleteOrder?.(orderId), style: 'destructive' },
       ],
       { cancelable: false }
     );
@@ -77,66 +105,84 @@ export default function MyOrdersScreen({
     const number = item.orderSeq || item.orderNo || item.number || `#${item.id}`;
     const address = item.address || item.addressStreet || '—';
     const customer = item.customer || '—';
-    const timeCreated = formatTimeOnly(item.createdAt) || '—';
-    const timeDelivery = formatTimeOnly(item.scheduledAt);
+    const created = formatTimeOnly(item.createdAt) || '—';
+    const elapsed = isCompleted ? null : formatElapsed(item.createdAt, nowTs, t);
+
+    const meta = statusMeta(item.status, t);
+    const stripeColor = isCompleted ? COLORS.success : meta.color;
+    // Пока заказ не «в пути» — показываем «В путь»; после — «Готово».
+    const isEnroute = (item.status || '').toLowerCase() === 'enroute';
+
+    const metaText = [`№${number}`, customer].filter(Boolean).join(' · ');
 
     return (
       <FadeInView index={index} style={[styles.card, isCompleted && styles.cardCompleted]}>
-        <PressableScale
-          style={styles.cardContent}
-          onPress={() => onOpenOrder?.(item)}
-        >
-          <View style={styles.leftCol}>
-            <View style={[styles.orderNumPill, isCompleted && styles.orderNumPillCompleted]}>
-              <Text style={[styles.orderNumPrefix, isCompleted && styles.orderNumPrefixCompleted]}>
-                №
-              </Text>
-              <Text style={[styles.orderNumText, isCompleted && styles.orderNumTextCompleted]}>
-                {number}
-              </Text>
-            </View>
+        {/* Цветная полоса статуса слева */}
+        <View style={[styles.stripe, { backgroundColor: stripeColor }]} />
 
-            <View style={styles.timeRow}>
-              <Text style={[styles.timeText, isCompleted && styles.timeTextCompleted]}>
-                {timeCreated}
-              </Text>
-              {timeDelivery && (
-                <>
-                  <View style={styles.timeDot} />
-                  <Text style={[styles.timeText, isCompleted && styles.timeTextCompleted]}>
-                    {timeDelivery}
-                  </Text>
-                </>
-              )}
-            </View>
-          </View>
-
-          <View style={styles.centerCol}>
-            <Text style={[styles.address, isCompleted && styles.addressCompleted]} numberOfLines={2}>
-              {address}
-            </Text>
+        <PressableScale style={styles.cardBody} onPress={() => onOpenOrder?.(item)}>
+          {/* Строка 1: адрес + индикатор/чек */}
+          <View style={styles.rowTop}>
             <Text
-              style={[styles.customerText, isCompleted && styles.customerTextCompleted]}
+              style={[styles.address, isCompleted && styles.addressCompleted]}
               numberOfLines={1}
             >
-              {customer}
+              {address}
             </Text>
+            {isCompleted ? (
+              <CheckCircle2 size={20} color={COLORS.success} strokeWidth={2.2} />
+            ) : (
+              <ChevronRight size={18} color={COLORS.muted} strokeWidth={2.2} />
+            )}
           </View>
 
-          {!isCompleted && <ChevronRight size={18} color={COLORS.muted} strokeWidth={2.2} />}
-          {isCompleted && <CheckCircle2 size={20} color={COLORS.success} strokeWidth={2.2} />}
+          {/* Строка 2: № · клиент */}
+          <Text style={styles.metaLine} numberOfLines={1}>
+            {metaText}
+          </Text>
+
+          {/* Строка 3: время создания | сколько висит + статус */}
+          <View style={styles.rowBottom}>
+            <View style={styles.timeChip}>
+              <Clock size={13} color={COLORS.primary} strokeWidth={2.2} />
+              <Text style={styles.timeCreated}>{created}</Text>
+              {elapsed ? <Text style={styles.timeDivider}>|</Text> : null}
+              {elapsed ? <Text style={styles.timeElapsed}>{elapsed}</Text> : null}
+            </View>
+
+            {!isCompleted && (
+              <View style={[styles.statusPill, { backgroundColor: meta.bg, borderColor: meta.border }]}>
+                <Text style={[styles.statusPillText, { color: meta.color }]} numberOfLines={1}>
+                  {meta.text}
+                </Text>
+              </View>
+            )}
+          </View>
         </PressableScale>
 
+        {/* Действия — только для активных заказов.
+            Сначала «В путь», после смены статуса на enroute — «Готово». */}
         {!isCompleted && (
           <View style={styles.actions}>
-            <PressableScale
-              style={styles.completeBtn}
-              onPress={() => handleCompleteOrder(item.id, number)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <CheckCircle2 size={18} color={COLORS.success} strokeWidth={2.2} />
-              <Text style={styles.completeBtnText}>{t('myOrders.done')}</Text>
-            </PressableScale>
+            {isEnroute ? (
+              <PressableScale
+                style={styles.completeBtn}
+                onPress={() => handleCompleteOrder(item.id, number)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <CheckCircle2 size={17} color={COLORS.success} strokeWidth={2.2} />
+                <Text style={styles.completeBtnText}>{t('myOrders.done')}</Text>
+              </PressableScale>
+            ) : (
+              <PressableScale
+                style={styles.enrouteBtn}
+                onPress={() => onEnrouteOrder?.(item.id)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Navigation size={17} color={COLORS.primary} strokeWidth={2.2} />
+                <Text style={styles.enrouteBtnText}>{t('myOrders.enroute', { defaultValue: 'В путь' })}</Text>
+              </PressableScale>
+            )}
 
             <PressableScale
               style={styles.removeBtn}
@@ -144,7 +190,7 @@ export default function MyOrdersScreen({
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               scaleTo={0.9}
             >
-              <Trash2 size={18} color={COLORS.danger} strokeWidth={2.2} />
+              <Trash2 size={17} color={COLORS.danger} strokeWidth={2.2} />
             </PressableScale>
           </View>
         )}
@@ -155,9 +201,6 @@ export default function MyOrdersScreen({
   const content = (
     <>
       <StatusBar barStyle={COLORS.statusBar} backgroundColor={COLORS.bg} />
-
-      {/* <View style={styles.bgCircleTop} pointerEvents="none" />
-      <View style={styles.bgCircleBottom} pointerEvents="none" /> */}
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t('myOrders.title')}</Text>
@@ -243,28 +286,6 @@ const makeStyles = (COLORS) => StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
 
-  bgCircleTop: {
-    position: 'absolute',
-    top: -80,
-    right: -60,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: COLORS.circleTop,
-    zIndex: 0,
-  },
-
-  bgCircleBottom: {
-    position: 'absolute',
-    bottom: -100,
-    left: -80,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: COLORS.circleBottom,
-    zIndex: 0,
-  },
-
   header: {
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -342,11 +363,11 @@ const makeStyles = (COLORS) => StyleSheet.create({
   },
 
   section: {
-    marginBottom: 22,
+    marginBottom: 20,
   },
 
   sectionCompleted: {
-    opacity: 0.88,
+    opacity: 0.9,
   },
 
   sectionHeader: {
@@ -354,7 +375,7 @@ const makeStyles = (COLORS) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 4,
-    marginBottom: 12,
+    marginBottom: 10,
   },
 
   sectionTitle: {
@@ -396,164 +417,137 @@ const makeStyles = (COLORS) => StyleSheet.create({
   },
 
   cardsList: {
-    gap: 10,
+    gap: 8,
   },
 
-  // card: {
-  //   backgroundColor: COLORS.card,
-  //   borderRadius: 20,
-  //   borderWidth: 1,
-  //   borderColor: COLORS.line,
-  //   overflow: 'hidden',
-  //   shadowColor: '#000',
-  //   shadowOpacity: Platform.OS === 'ios' ? 0.22 : 0.18,
-  //   shadowOffset: { width: 0, height: 10 },
-  //   shadowRadius: 18,
-  //   elevation: 8,
-  // },
-
+  // ── Карточка (единый стиль с экраном «Все заказы») ──
   card: {
+    position: 'relative',
     backgroundColor: COLORS.card,
-    borderRadius: 22,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.lineSoft,
-
-    marginBottom: 10,
-
+    overflow: 'hidden',
     shadowColor: COLORS.shadow,
-    shadowOpacity: Platform.OS === 'ios' ? 0.35 : 0.25,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 22,
-    elevation: 10,
+    shadowOpacity: Platform.OS === 'ios' ? 0.18 : 0.12,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 4,
   },
 
-  // cardCompleted: {
-  //   backgroundColor: 'rgba(255,255,255,0.03)',
-  //   borderColor: 'rgba(74, 222, 128, 0.14)',
-  // },
   cardCompleted: {
     backgroundColor: COLORS.cardCompleted,
     borderColor: COLORS.softGreenBorder,
   },
 
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-  },
-
-  leftCol: {
-    width: 88,
-    alignItems: 'flex-start',
-  },
-
-  orderNumPill: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    backgroundColor: COLORS.softBlue,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderWidth: 1,
-    borderColor: COLORS.softBlueBorder,
-  },
-
-  orderNumPillCompleted: {
-    backgroundColor: COLORS.softGreen,
-    borderColor: COLORS.softGreenBorder,
-  },
-
-  orderNumPrefix: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: COLORS.primary,
-    marginRight: 4,
-  },
-
-  orderNumPrefixCompleted: {
-    color: COLORS.success,
-  },
-
-  orderNumText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: COLORS.primary,
-  },
-
-  orderNumTextCompleted: {
-    color: COLORS.success,
-  },
-
-  timeRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    flexWrap: 'wrap',
-  },
-
-  timeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.muted,
-  },
-
-  timeTextCompleted: {
-    color: COLORS.muted,
-  },
-
-  timeDot: {
+  stripe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
     width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(143,163,184,0.5)',
-    marginHorizontal: 8,
   },
 
-  centerCol: {
-    flex: 1,
-    justifyContent: 'center',
+  cardBody: {
+    paddingVertical: 9,
+    paddingRight: 11,
+    paddingLeft: 15,
+  },
+
+  rowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
 
   address: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
-    lineHeight: 20,
   },
 
   addressCompleted: {
     color: COLORS.muted,
   },
 
-  customerText: {
-    marginTop: 6,
+  metaLine: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.muted,
+    marginTop: 3,
+  },
+
+  rowBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 7,
+  },
+
+  timeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: COLORS.softBlueBorder,
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+
+  timeCreated: {
     fontSize: 12,
     fontWeight: '700',
+    color: COLORS.text,
+  },
+
+  timeDivider: {
+    fontSize: 12,
     color: COLORS.muted,
   },
 
-  customerTextCompleted: {
-    color: COLORS.muted,
+  timeElapsed: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.warning,
   },
 
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
+
+  statusPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // ── Действия ──
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingBottom: 14,
     gap: 8,
+    paddingLeft: 15,
+    paddingRight: 11,
+    paddingBottom: 10,
+    paddingTop: 2,
   },
 
   completeBtn: {
     flex: 1,
-    height: 44,
+    height: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderRadius: 14,
+    borderRadius: 10,
     backgroundColor: COLORS.softGreen,
     borderWidth: 1,
     borderColor: COLORS.softGreenBorder,
@@ -565,10 +559,29 @@ const makeStyles = (COLORS) => StyleSheet.create({
     color: COLORS.success,
   },
 
+  enrouteBtn: {
+    flex: 1,
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    backgroundColor: COLORS.softBlue,
+    borderWidth: 1,
+    borderColor: COLORS.softBlueBorder,
+  },
+
+  enrouteBtnText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.primary,
+  },
+
   removeBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: COLORS.softRed,
     borderWidth: 1,
     borderColor: COLORS.softRedBorder,
