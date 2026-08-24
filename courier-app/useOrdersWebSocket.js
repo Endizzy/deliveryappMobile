@@ -70,8 +70,8 @@ function normalizeOrder(raw) {
     status,
     orderType,
     isFinished,
-    outlet,       // ← гарантируем наличие поля для фильтрации
-    pickupName: raw.pickupName || raw.outlet || '', // ← и обратно для совместимости
+    outlet,       // гарантируем наличие поля для фильтрации
+    pickupName: raw.pickupName || raw.outlet || '', // и обратно для совместимости
   };
 }
 
