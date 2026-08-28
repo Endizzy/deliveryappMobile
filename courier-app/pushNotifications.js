@@ -6,24 +6,53 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ORIGIN } from './constants';
+import { isLive, claimOrderNotification } from './wsLiveness';
 
 // projectId из app.json → extra.eas.projectId (нужен для getExpoPushTokenAsync)
 const PROJECT_ID = 'bddc95df-5d2b-4c34-be76-ff4fc4a333c3';
 const TOKEN_KEY = 'authToken';
 export const ORDERS_CHANNEL = 'orders';
 
-// Поведение, когда приложение НА ПЕРЕДНЕМ ПЛАНЕ: системный баннер НЕ показываем —
-// при открытом приложении за оповещение отвечает WS (звук notifyNewOrder) и
-// внутренний баннер «заказ назначен мне». Это избегает двойного уведомления.
+// Поведение, когда приложение НА ПЕРЕДНЕМ ПЛАНЕ.
+//
+// Push — резервный канал оповещения, и глушить его можно ТОЛЬКО когда основной
+// канал доказанно работает. Раньше баннер подавлялся безусловно: если WS в этот
+// момент был мёртв (half-open после Doze/смены сети), курьер не получал ни
+// WS-звука, ни push — заказ приходил молча. Теперь решает состояние канала:
+//
+//   • WS живой и этот заказ уже озвучен по WS → молчим (не дублируем сигнал);
+//   • WS мёртв, либо заказ по WS не приходил  → показываем баннер со звуком.
+//
+// claimOrderNotification гарантирует ровно один сигнал на заказ независимо от
+// того, какой канал сработал первым.
 // В фоне обработчик не вызывается — там ОС сама показывает push со звуком канала.
 Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-        shouldShowBanner: false,
-        shouldShowList: false,
-        shouldShowAlert: false,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-    }),
+    handleNotification: async (notification) => {
+        const data = notification?.request?.content?.data || {};
+        const orderId = data.orderId ?? null;
+
+        // Живой канал уже принёс этот заказ и проиграл звук — дубль не нужен
+        const alreadySignalled = !claimOrderNotification(orderId);
+        const suppress = isLive() && alreadySignalled;
+
+        if (suppress) {
+            return {
+                shouldShowBanner: false,
+                shouldShowList: false,
+                shouldShowAlert: false,
+                shouldPlaySound: false,
+                shouldSetBadge: false,
+            };
+        }
+
+        return {
+            shouldShowBanner: true,
+            shouldShowList: true,
+            shouldShowAlert: true,
+            shouldPlaySound: true,
+            shouldSetBadge: false,
+        };
+    },
 });
 
 // Android-канал для заказов (с высокой важностью и звуком)
@@ -112,6 +141,24 @@ export async function unregisterPushToken() {
     } catch (e) {
         // ignore
     }
+}
+
+// Подписка на ПОЛУЧЕНИЕ уведомления при открытом приложении.
+// Push здесь работает не только как звук, но и как триггер синхронизации:
+// раз сервер прислал уведомление о заказе, списки нужно перечитать немедленно,
+// не дожидаясь очередного тика поллинга — особенно если WS в этот момент мёртв.
+export function addOrderReceivedListener(handler) {
+    const sub = Notifications.addNotificationReceivedListener((notification) => {
+        try {
+            const data = notification?.request?.content?.data || {};
+            handler?.(data);
+        } catch (e) {
+            // ignore
+        }
+    });
+    return () => {
+        try { sub.remove(); } catch (e) {}
+    };
 }
 
 // Подписка на тап по уведомлению. Возвращает функцию отписки.

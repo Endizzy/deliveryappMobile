@@ -35,7 +35,7 @@ import PressableScale from './components/anim/PressableScale';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import { initOrderSound, setOrderSoundEnabled } from './notificationSound';
-import { registerPushToken, unregisterPushToken, addOrderTapListener } from './pushNotifications';
+import { registerPushToken, unregisterPushToken, addOrderTapListener, addOrderReceivedListener } from './pushNotifications';
 import OrderAssignedToast from './components/OrderAssignedToast';
 
 const UNIT_KEY = 'unit';
@@ -268,6 +268,17 @@ export default function CourierShiftScreen({ onLogout }) {
         });
         return unsubscribe;
     }, []);
+
+    // Пришёл push при открытом приложении — сразу перечитываем списки.
+    // Это второй независимый от WebSocket путь доставки заказа в UI:
+    // если сокет мёртв, заказ появится по push, а не через 15 c поллинга.
+    useEffect(() => {
+        const unsubscribe = addOrderReceivedListener(() => {
+            fetchAvailable();
+            fetchMy();
+        });
+        return unsubscribe;
+    }, [fetchAvailable, fetchMy]);
 
     // ── Точки выдачи: список админ-аккаунтов компании ────────────────────────
     const fetchPickupPoints = useCallback(async () => {

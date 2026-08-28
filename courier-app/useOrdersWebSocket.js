@@ -4,6 +4,15 @@ import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, ORIGIN } from './constants';
 import { notifyNewOrder } from './notificationSound';
+import {
+  PING_INTERVAL_MS,
+  STALE_MS,
+  markMessage,
+  markHelloAck,
+  markDisconnected,
+  isLive,
+  claimOrderNotification,
+} from './wsLiveness';
 
 const TOKEN_KEY = 'authToken';
 
@@ -126,6 +135,10 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
 
   // ── Обработка входящего WS-сообщения ──────────────────────────────────
   const handleMessage = useCallback((msg) => {
+    // Любое сообщение — доказательство живости канала (в т.ч. pong)
+    markMessage();
+    if (msg.type === 'hello_ok') { markHelloAck(); return; }
+    if (msg.type === 'pong') return;
 
     // Пропускаем служебные/геолокационные сообщения
     if (
@@ -149,13 +162,14 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       if (!o || o.isFinished) return;
 
       if (!o.courierId) {
-        // Свободный → добавить в доступные + оповещение (вибрация + звук)
+        // Свободный → добавить в доступные + оповещение (вибрация + звук).
+        // claimOrderNotification — чтобы push по этому же заказу промолчал.
         setAvailableOrders((prev) => mergeById(prev, [o]));
-        notifyNewOrder();
+        if (claimOrderNotification(o.id)) notifyNewOrder();
       } else if (myUnitId && o.courierId === myUnitId) {
         // Сразу назначен мне (admin создал заказ с курьером) → звук + in-app баннер
         setMyOrders((prev) => mergeById(prev, [o]));
-        notifyNewOrder();
+        if (claimOrderNotification(o.id)) notifyNewOrder();
         onAssignedOrderRef.current?.(o);
       }
       return;
@@ -223,25 +237,34 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     }
   }, []);
 
-  // ── WebSocket: подключение с авто-реконнектом ──────────────────────
+  // ── WebSocket: подключение, heartbeat, авто-реконнект ──────────────
   //
-  // Гарантия консистентности: на КАЖДЫЙ (ре)коннект — полный REST-ресинк
-  // (fetchAvailable + fetchMy). Всё, что пришло за время разрыва (приложение
-  // было свёрнуто, смена Wi-Fi→LTE), перекрывается свежим снапшотом.
+  // Живость канала определяется НЕ по ws.readyState (на мобильных он врёт:
+  // при обрыве без FIN сокет вечно числится OPEN), а по факту получения
+  // данных. Клиент раз в PING_INTERVAL_MS шлёт {type:'ping'} и ждёт ответ;
+  // тишина дольше STALE_MS = канал мёртв → принудительный реконнект.
   //
-  // AppState: при возврате приложения в foreground — немедленный ресинк
-  // по REST + принудительный реконнект, если сокет умер в фоне.
+  // Гарантия консистентности: на КАЖДЫЙ (ре)коннект — полный REST-ресинк.
   useEffect(() => {
     if (!unit) return;
 
     let ws;
     let reconnectTimer;
+    let heartbeatTimer;
+    let connectTimeout;
     let attempts  = 0;
     let destroyed = false;
+
+    const clearTimers = () => {
+      clearTimeout(reconnectTimer);
+      clearInterval(heartbeatTimer);
+      clearTimeout(connectTimeout);
+    };
 
     const scheduleReconnect = () => {
       if (destroyed) return;
       clearTimeout(reconnectTimer);
+      clearInterval(heartbeatTimer);
       // backoff с потолком 15 c + джиттер, чтобы не долбить сервер синхронно
       const delay =
         Math.min(15000, 1000 * 2 ** Math.min(attempts, 4)) +
@@ -250,23 +273,55 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       reconnectTimer = setTimeout(connect, delay);
     };
 
+    // Разрываем текущий сокет и немедленно переподключаемся.
+    // Нужен именно close(): сокет может числиться OPEN, будучи мёртвым.
+    const forceReconnect = (reason) => {
+      if (destroyed) return;
+      console.warn('[WS] forced reconnect:', reason);
+      markDisconnected();
+      setConnected(false);
+      const sock = wsRef.current;
+      wsRef.current = null;
+      try { sock?.close(); } catch {}
+      clearTimers();
+      attempts = 0;
+      connect();
+    };
+
     const connect = async () => {
       try {
-        // защита от параллельного подключения (таймер реконнекта + AppState)
+        if (destroyed) return;
+        // Защита от параллельных подключений. Проверяем не только readyState,
+        // но и живость: «открытый», но молчащий сокет пересоздаём.
         const cur = wsRef.current;
-        if (cur && cur.readyState <= 1) return; // CONNECTING или OPEN — уже есть
+        if (cur && cur.readyState <= 1 && isLive()) return;
 
         const token = await AsyncStorage.getItem(TOKEN_KEY);
         if (!token) { onUnauthorizedRef.current?.(); return; }
         const jwtPayload = decodeJwtPayload(token);
         const companyId  = jwtPayload?.companyId ?? jwtPayload?.company_id ?? null;
 
+        markDisconnected();
         ws = new WebSocket(WS_URL);
         wsRef.current = ws;
 
+        // Подключение может зависнуть в CONNECTING без onopen/onclose —
+        // тогда без таймаута реконнект не наступит никогда.
+        clearTimeout(connectTimeout);
+        connectTimeout = setTimeout(() => {
+          if (destroyed) return;
+          if (ws.readyState === 0) {
+            console.warn('[WS] connect timeout');
+            try { ws.close(); } catch {}
+            scheduleReconnect();
+          }
+        }, 15000);
+
         ws.onopen = () => {
           attempts = 0;
+          clearTimeout(connectTimeout);
           setConnected(true);
+          markMessage(); // соединение открыто — считаем канал свежим
           ws.send(JSON.stringify({
             type:            'hello',
             role:            'courier',
@@ -278,6 +333,22 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
           // Ресинк на каждый (ре)коннект — ключ к консистентности
           fetchAvailable();
           fetchMy();
+
+          // Heartbeat: ping держит канал прогретым (NAT/Cloudflare), а его
+          // pong — единственное подтверждение живости, видимое из JS.
+          clearInterval(heartbeatTimer);
+          heartbeatTimer = setInterval(() => {
+            if (destroyed) return;
+            if (!isLive()) {           // ответов нет дольше STALE_MS
+              forceReconnect('stale (no pong)');
+              return;
+            }
+            try {
+              ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+            } catch (e) {
+              forceReconnect('ping failed');
+            }
+          }, PING_INTERVAL_MS);
         };
 
         ws.onmessage = (evt) => {
@@ -288,6 +359,9 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
         };
 
         ws.onclose = (e) => {
+          clearInterval(heartbeatTimer);
+          clearTimeout(connectTimeout);
+          markDisconnected();
           setConnected(false);
           if (e?.code === 4401) {
             // токен невалиден/просрочен — реконнект бессмыслен, нужен перелогин
@@ -309,29 +383,73 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
 
     connect();
 
-    // Возврат в foreground: состояние — сразу по REST, сокет — проверить/поднять
+    // Возврат в foreground: в фоне ОС морозит таймеры, поэтому проверяем
+    // живость сразу — состояние по REST, и сокет пересоздаём, если он молчит.
     const appStateSub = AppState.addEventListener('change', (s) => {
       if (s !== 'active' || destroyed) return;
       fetchAvailable();
       fetchMy();
       const sock = wsRef.current;
-      // CONNECTING(0)/OPEN(1) — жив; CLOSING(2)/CLOSED(3)/нет — переподключаем
       if (!sock || sock.readyState > 1) {
         attempts = 0;
         clearTimeout(reconnectTimer);
         connect();
+      } else if (!isLive()) {
+        // сокет «открыт», но данных не было — типичный half-open после Doze
+        forceReconnect('not live after foreground');
       }
     });
 
     return () => {
       destroyed = true;
-      clearTimeout(reconnectTimer);
+      clearTimers();
+      markDisconnected();
       try { appStateSub.remove(); } catch {}
       try { ws?.close(); } catch {}
     };
   }, [unit, handleMessage, fetchAvailable, fetchMy]);
 
+  // ── Страховка поллингом ────────────────────────────────────────────
+  // Второй рубеж на случай, если WS всё же не доставил событие: канал может
+  // быть «живым» по pong, но пропустить рассылку (рестарт сервера между
+  // heartbeat-ами, потеря пакета). Интервал адаптивный, чтобы не жечь
+  // батарею курьера за смену:
+  //   • WS подтверждён живым → сверка раз в 60 c;
+  //   • тишина в канале      → опрос каждые 15 c, пока связь не вернётся.
+  // В фоне поллинг не нужен: там за оповещение отвечает push, а при возврате
+  // в foreground AppState-обработчик и так делает полный ресинк.
+  useEffect(() => {
+    if (!unit) return;
+
+    let timer;
+    let stopped = false;
+
+    const tick = () => {
+      if (stopped) return;
+      if (AppState.currentState === 'active') {
+        fetchAvailable();
+        fetchMy();
+      }
+      schedule();
+    };
+
+    const schedule = () => {
+      if (stopped) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, isLive() ? 60000 : 15000);
+    };
+
+    schedule();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [unit, fetchAvailable, fetchMy]);
+
   // ── Взять заказ ────────────────────────────────────────────────────
+  // Сервер подтвердил — значит заказ мой, независимо от того, дошло ли
+  // WS-эхо. Переносим его в «Мои» сразу: иначе при мёртвом канале заказ
+  // продолжает висеть в «Все» и курьер думает, что не взял его.
   const assignOrder = useCallback(async (orderId) => {
     const token = await AsyncStorage.getItem(TOKEN_KEY);
     const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/assign`, {
@@ -344,8 +462,20 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Не удалось взять заказ');
+
+    const myUnitId = unitRef.current?.unitId ?? null;
+    setAvailableOrders((prev) => {
+      const taken = prev.find((o) => String(o.id) === String(orderId));
+      if (taken && myUnitId != null) {
+        const mine = normalizeOrder({ ...taken, courierId: String(myUnitId) });
+        if (mine) setMyOrders((cur) => mergeById(cur, [mine]));
+      }
+      return removeById(prev, orderId);
+    });
+    // сверка с сервером (статус, назначения других курьеров)
+    fetchMy();
     return data;
-  }, []);
+  }, [fetchMy]);
 
   // ── Отказаться от заказа ───────────────────────────────────────────
   const releaseOrder = useCallback(async (orderId) => {
@@ -360,8 +490,19 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Не удалось отказаться от заказа');
+
+    // Симметрично assign: не ждём эха, сразу возвращаем заказ в «Все»
+    setMyOrders((prev) => {
+      const released = prev.find((o) => String(o.id) === String(orderId));
+      if (released) {
+        const free = normalizeOrder({ ...released, courierId: null, courier_unit_id: null });
+        if (free && !free.isFinished) setAvailableOrders((cur) => mergeById(cur, [free]));
+      }
+      return removeById(prev, orderId);
+    });
+    fetchAvailable();
     return data;
-  }, []);
+  }, [fetchAvailable]);
 
   // ── Завершить заказ (Done) ─────────────────────────────────────────
   const completeOrder = useCallback(async (orderId) => {
