@@ -13,6 +13,15 @@ import {
   isLive,
   claimOrderNotification,
 } from './wsLiveness';
+import {
+  enqueue as queueOp,
+  flush as flushQueue,
+  loadQueue,
+  subscribe as subscribeQueue,
+  applyPending,
+  getPendingCount,
+  isOffline as queueOffline,
+} from './offlineQueue';
 
 const TOKEN_KEY = 'authToken';
 
@@ -86,22 +95,60 @@ function normalizeOrder(raw) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
+export function useOrdersWebSocket({ unit, onAssignedOrder, onNewOrder, onUnauthorized, onConflict }) {
   const [availableOrders, setAvailableOrders] = useState([]);
   const [myOrders,        setMyOrders]        = useState([]);
   const [connected,       setConnected]       = useState(false);
+
+  // Состояние офлайн-очереди для индикатора связи
+  const [pendingCount, setPendingCount] = useState(0);
+  const [offline,      setOffline]      = useState(false);
+  const [syncing,      setSyncing]      = useState(false);
 
   const wsRef     = useRef(null);
   const unitRef   = useRef(unit);
   unitRef.current = unit;
 
+  // Актуальные списки в ref: applyPending работает с обоими сразу, а fetch-функции
+  // приходят порознь. Обновляются после каждого рендера, поэтому учитывают и
+  // внешние setMyOrders из CourierShiftScreen.
+  const availableRef = useRef([]);
+  const myRef        = useRef([]);
+  useEffect(() => { availableRef.current = availableOrders; }, [availableOrders]);
+  useEffect(() => { myRef.current = myOrders; }, [myOrders]);
+
   // Колбэк «заказ назначен мне» держим в ref, чтобы handleMessage не пересоздавался
   const onAssignedOrderRef = useRef(onAssignedOrder);
   onAssignedOrderRef.current = onAssignedOrder;
 
+  // Колбэк «появился свободный заказ»
+  const onNewOrderRef = useRef(onNewOrder);
+  onNewOrderRef.current = onNewOrder;
+
   // Колбэк «токен недействителен» (401) — тоже в ref
   const onUnauthorizedRef = useRef(onUnauthorized);
   onUnauthorizedRef.current = onUnauthorized;
+
+  // Колбэк «действие потеряло смысл» (заказ забрал другой курьер и т.п.)
+  const onConflictRef = useRef(onConflict);
+  onConflictRef.current = onConflict;
+
+  /**
+   * Кладём в состояние данные сервера, наложив на них ещё не отправленные
+   * действия курьера. Без этого поллинг «откатывает» офлайн-действия и списки
+   * мигают: закрыл заказ → через 15 c он снова активен → после отправки закрыт.
+   */
+  const applyServerLists = useCallback(({ available, my }) => {
+    const merged = applyPending({
+      available: available ?? availableRef.current,
+      my:        my ?? myRef.current,
+      myUnitId:  unitRef.current?.unitId ?? null,
+    });
+    availableRef.current = merged.available;
+    myRef.current        = merged.my;
+    setAvailableOrders(merged.available);
+    setMyOrders(merged.my);
+  }, []);
 
   // ── REST: загрузить свободные заказы ──────────────────────────────────
   const fetchAvailable = useCallback(async () => {
@@ -112,11 +159,11 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       });
       if (res.status === 401) { onUnauthorizedRef.current?.(); return; }
       const data = await res.json();
-      if (data.ok) setAvailableOrders(data.items || []);
+      if (data.ok) applyServerLists({ available: data.items || [] });
     } catch (e) {
       console.warn('[WS] fetchAvailable', e);
     }
-  }, []);
+  }, [applyServerLists]);
 
   // ── REST: загрузить мои заказы ─────────────────────────────────────────
   const fetchMy = useCallback(async () => {
@@ -127,17 +174,21 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       });
       if (res.status === 401) { onUnauthorizedRef.current?.(); return; }
       const data = await res.json();
-      if (data.ok) setMyOrders(data.items || []);
+      if (data.ok) applyServerLists({ my: data.items || [] });
     } catch (e) {
       console.warn('[WS] fetchMy', e);
     }
-  }, []);
+  }, [applyServerLists]);
 
   // ── Обработка входящего WS-сообщения ──────────────────────────────────
   const handleMessage = useCallback((msg) => {
     // Любое сообщение — доказательство живости канала (в т.ч. pong)
     markMessage();
-    if (msg.type === 'hello_ok') { markHelloAck(); return; }
+    if (msg.type === 'hello_ok') {
+      markHelloAck();
+      flushQueue(); // связь восстановлена — отправляем накопленные действия
+      return;
+    }
     if (msg.type === 'pong') return;
 
     // Пропускаем служебные/геолокационные сообщения
@@ -165,7 +216,12 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
         // Свободный → добавить в доступные + оповещение (вибрация + звук).
         // claimOrderNotification — чтобы push по этому же заказу промолчал.
         setAvailableOrders((prev) => mergeById(prev, [o]));
-        if (claimOrderNotification(o.id)) notifyNewOrder();
+        if (claimOrderNotification(o.id)) {
+          notifyNewOrder();
+          // Один звук без баннера не подсказывал, что именно приехало:
+          // курьеру приходилось искать заказ по списку вручную.
+          onNewOrderRef.current?.(o);
+        }
       } else if (myUnitId && o.courierId === myUnitId) {
         // Сразу назначен мне (admin создал заказ с курьером) → звук + in-app баннер
         setMyOrders((prev) => mergeById(prev, [o]));
@@ -218,6 +274,14 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
         // Назначен мне → добавить/обновить в My, убрать из Available
         setMyOrders        ((prev) => mergeById(prev, [o]));
         setAvailableOrders ((prev) => removeById(prev, o.id));
+
+        // Заказ только что закрепили за мной (админ выбрал исполнителя).
+        // Флаг ставит сервер: когда курьер берёт заказ сам, его нет — и
+        // оповещать не нужно, курьер и так знает о своём действии.
+        if (msg.courierAssigned && claimOrderNotification(o.id)) {
+          notifyNewOrder();
+          onAssignedOrderRef.current?.(o);
+        }
       } else if (isFree) {
         // Освободился → добавить в Available, убрать из My
         setAvailableOrders ((prev) => mergeById(prev, [o]));
@@ -387,6 +451,7 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     // живость сразу — состояние по REST, и сокет пересоздаём, если он молчит.
     const appStateSub = AppState.addEventListener('change', (s) => {
       if (s !== 'active' || destroyed) return;
+      flushQueue(); // приложение развернули — пробуем дослать накопленное
       fetchAvailable();
       fetchMy();
       const sock = wsRef.current;
@@ -408,6 +473,53 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       try { ws?.close(); } catch {}
     };
   }, [unit, handleMessage, fetchAvailable, fetchMy]);
+
+  // ── Офлайн-очередь: состояние для UI и реакция на события ──────────
+  useEffect(() => {
+    if (!unit) return;
+    let alive = true;
+
+    // Очередь могла остаться с прошлого запуска (приложение убили в лифте)
+    loadQueue().then(() => {
+      if (!alive) return;
+      setPendingCount(getPendingCount());
+      setOffline(queueOffline());
+      flushQueue();
+    });
+
+    const off = subscribeQueue((event) => {
+      if (!alive) return;
+
+      if (event.type === 'change') {
+        setPendingCount(event.pending);
+        setOffline(event.offline);
+        setSyncing(event.flushing);
+        return;
+      }
+
+      if (event.type === 'synced') {
+        // очередь ушла — подтягиваем правду с сервера
+        fetchAvailable();
+        fetchMy();
+        return;
+      }
+
+      if (event.type === 'conflict') {
+        // операция отклонена окончательно: списки уже перечитываются в runOp,
+        // здесь только сообщаем пользователю
+        onConflictRef.current?.(event.op, event.reason);
+        fetchAvailable();
+        fetchMy();
+        return;
+      }
+
+      if (event.type === 'unauthorized') {
+        onUnauthorizedRef.current?.();
+      }
+    });
+
+    return () => { alive = false; off(); };
+  }, [unit, fetchAvailable, fetchMy]);
 
   // ── Страховка поллингом ────────────────────────────────────────────
   // Второй рубеж на случай, если WS всё же не доставил событие: канал может
@@ -446,23 +558,37 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     };
   }, [unit, fetchAvailable, fetchMy]);
 
-  // ── Взять заказ ────────────────────────────────────────────────────
-  // Сервер подтвердил — значит заказ мой, независимо от того, дошло ли
-  // WS-эхо. Переносим его в «Мои» сразу: иначе при мёртвом канале заказ
-  // продолжает висеть в «Все» и курьер думает, что не взял его.
-  const assignOrder = useCallback(async (orderId) => {
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/assign`, {
-      method:  'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Не удалось взять заказ');
+  // ── Действия курьера ───────────────────────────────────────────────
+  //
+  // Все четыре операции идут через офлайн-очередь: отсутствие связи больше не
+  // ошибка, а «отправим позже». Функции НЕ бросают исключение при отсутствии
+  // сети — возвращают { queued: true }, чтобы UI показал «сохранено, отправим
+  // при появлении связи» вместо «Network request failed».
+  //
+  // Исключение бросается только при конфликте (заказ забрал другой курьер,
+  // заказ отменён) — это настоящая ошибка, о которой курьер должен узнать.
 
+  const runOp = useCallback(async (type, orderId, fallbackError) => {
+    const r = await queueOp(type, orderId);
+    if (r.conflict) {
+      // операция отклонена сервером окончательно — приводим списки к правде
+      fetchAvailable();
+      fetchMy();
+      const err = new Error(r.conflict || fallbackError);
+      err.isConflict = true;
+      throw err;
+    }
+    if (r.sent) {
+      // сверка с сервером: статус, назначения других курьеров
+      fetchMy();
+    }
+    return r;
+  }, [fetchAvailable, fetchMy]);
+
+  // Взять заказ на себя
+  const assignOrder = useCallback(async (orderId) => {
+    // Оптимистично переносим в «Мои» ещё до отправки: при офлайне очередь
+    // применит операцию позже, а applyPending не даст спискам мигать.
     const myUnitId = unitRef.current?.unitId ?? null;
     setAvailableOrders((prev) => {
       const taken = prev.find((o) => String(o.id) === String(orderId));
@@ -472,26 +598,20 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       }
       return removeById(prev, orderId);
     });
-    // сверка с сервером (статус, назначения других курьеров)
-    fetchMy();
-    return data;
-  }, [fetchMy]);
 
-  // ── Отказаться от заказа ───────────────────────────────────────────
+    try {
+      return await runOp('assign', orderId, 'Не удалось взять заказ');
+    } catch (e) {
+      if (e.isConflict) {
+        // заказ уже чужой — откатываем перенос
+        setMyOrders((prev) => removeById(prev, orderId));
+      }
+      throw e;
+    }
+  }, [runOp]);
+
+  // Отказаться от заказа
   const releaseOrder = useCallback(async (orderId) => {
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/release`, {
-      method:  'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Не удалось отказаться от заказа');
-
-    // Симметрично assign: не ждём эха, сразу возвращаем заказ в «Все»
     setMyOrders((prev) => {
       const released = prev.find((o) => String(o.id) === String(orderId));
       if (released) {
@@ -500,41 +620,20 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
       }
       return removeById(prev, orderId);
     });
-    fetchAvailable();
-    return data;
-  }, [fetchAvailable]);
+    return runOp('release', orderId, 'Не удалось отказаться от заказа');
+  }, [runOp]);
 
-  // ── Завершить заказ (Done) ─────────────────────────────────────────
-  const completeOrder = useCallback(async (orderId) => {
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/complete`, {
-      method:  'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Не удалось завершить заказ');
-    return data;
-  }, []);
+  // Завершить заказ (оптимистичное обновление делает экран)
+  const completeOrder = useCallback(
+    (orderId) => runOp('complete', orderId, 'Не удалось завершить заказ'),
+    [runOp]
+  );
 
-  // ── В путь (enroute) ───────────────────────────────────────────────
-  const enrouteOrder = useCallback(async (orderId) => {
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const res   = await fetch(`${ORIGIN}/api/mobile-orders/${orderId}/enroute`, {
-      method:  'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
-    if (res.status === 401) { onUnauthorizedRef.current?.(); throw new Error('unauthorized'); }
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Не удалось обновить заказ');
-    return data;
-  }, []);
+  // В путь (оптимистичное обновление делает экран)
+  const enrouteOrder = useCallback(
+    (orderId) => runOp('enroute', orderId, 'Не удалось обновить заказ'),
+    [runOp]
+  );
 
   return {
     availableOrders,
@@ -547,5 +646,10 @@ export function useOrdersWebSocket({ unit, onAssignedOrder, onUnauthorized }) {
     releaseOrder,
     completeOrder,
     enrouteOrder,
+    // состояние офлайн-очереди для индикатора связи
+    pendingCount,
+    offline,
+    syncing,
+    retryNow: flushQueue,
   };
 }

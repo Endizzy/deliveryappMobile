@@ -6,7 +6,6 @@ import {
   ScrollView,
   StatusBar,
   Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Trash2, ChevronRight, CheckCircle2, Clock, Navigation } from 'lucide-react-native';
@@ -14,6 +13,7 @@ import { useTheme } from './theme';
 import { useT } from './i18n';
 import FadeInView from './components/anim/FadeInView';
 import PressableScale from './components/anim/PressableScale';
+import FreshHighlight from './components/anim/FreshHighlight';
 
 // Форматирование только времени (например: "14:16")
 function formatTimeOnly(dateStr) {
@@ -63,6 +63,7 @@ function statusMeta(status, t) {
 export default function MyOrdersScreen({
   myOrders = [],
   useSafeArea = true,
+  highlightOrderId = null,   // заказ из push — подсвечиваем, чтобы курьер его нашёл
   onOpenOrder,
   onRemoveOrder,
   onEnrouteOrder,
@@ -89,16 +90,10 @@ export default function MyOrdersScreen({
 
   const Wrapper = useSafeArea ? SafeAreaView : View;
 
-  const handleCompleteOrder = (orderId, orderNumber) => {
-    Alert.alert(
-      t('myOrders.closeTitle'),
-      t('myOrders.closeBody', { number: orderNumber }),
-      [
-        { text: t('common.cancel'), onPress: () => { }, style: 'cancel' },
-        { text: t('myOrders.yesDone'), onPress: () => onCompleteOrder?.(orderId), style: 'destructive' },
-      ],
-      { cancelable: false }
-    );
+  // Подтверждение спрашивает экран (общий нижний лист OrderDialog) — здесь
+  // системного Alert быть не должно, иначе диалога было два подряд.
+  const handleCompleteOrder = (orderId) => {
+    onCompleteOrder?.(orderId);
   };
 
   const renderOrderItem = ({ item, index, isCompleted }) => {
@@ -114,9 +109,16 @@ export default function MyOrdersScreen({
     const isEnroute = (item.status || '').toLowerCase() === 'enroute';
 
     const metaText = [`№${number}`, customer].filter(Boolean).join(' · ');
+    const isHighlighted =
+      highlightOrderId != null && String(item.id) === String(highlightOrderId);
 
     return (
-      <FadeInView index={index} style={[styles.card, isCompleted && styles.cardCompleted]}>
+      <FadeInView
+        index={index}
+        style={[styles.card, isCompleted && styles.cardCompleted]}
+      >
+        {/* Тот же механизм подсветки, что и в списке заказов точки */}
+        <FreshHighlight active={isHighlighted} color={COLORS.softBlueStrong ?? COLORS.softBlue} />
         {/* Цветная полоса статуса слева */}
         <View style={[styles.stripe, { backgroundColor: stripeColor }]} />
 
@@ -167,7 +169,7 @@ export default function MyOrdersScreen({
             {isEnroute ? (
               <PressableScale
                 style={styles.completeBtn}
-                onPress={() => handleCompleteOrder(item.id, number)}
+                onPress={() => handleCompleteOrder(item.id)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <CheckCircle2 size={17} color={COLORS.success} strokeWidth={2.2} />

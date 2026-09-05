@@ -98,6 +98,8 @@ const dark = {
     softGreenBorder: 'rgba(74, 222, 128, 0.26)',
     softRed: 'rgba(255, 107, 107, 0.12)',
     softRedBorder: 'rgba(255, 107, 107, 0.26)',
+    softAmber: 'rgba(251, 191, 36, 0.14)',
+    softAmberBorder: 'rgba(251, 191, 36, 0.28)',
 
     shadow: '#000000',
     circleTop: 'rgba(90, 160, 255, 0.12)',
@@ -150,6 +152,8 @@ const light = {
     softGreenBorder: 'rgba(22, 163, 74, 0.22)',
     softRed: 'rgba(229, 72, 77, 0.10)',
     softRedBorder: 'rgba(229, 72, 77, 0.22)',
+    softAmber: 'rgba(217, 119, 6, 0.12)',
+    softAmberBorder: 'rgba(217, 119, 6, 0.24)',
 
     shadow: '#9BB0C9',
     circleTop: 'rgba(0, 122, 255, 0.10)',

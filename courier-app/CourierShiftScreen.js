@@ -12,6 +12,7 @@ import {
     StatusBar,
     AppState,
     Animated,
+    BackHandler,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
@@ -35,11 +36,24 @@ import PressableScale from './components/anim/PressableScale';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import { initOrderSound, setOrderSoundEnabled } from './notificationSound';
-import { registerPushToken, unregisterPushToken, addOrderTapListener, addOrderReceivedListener } from './pushNotifications';
-import OrderAssignedToast from './components/OrderAssignedToast';
+import { registerPushToken, unregisterPushToken, addOrderTapListener, addOrderReceivedListener, getInitialOrderTap } from './pushNotifications';
+import OrderDialog from './components/OrderDialog';
+import NewOrderSheet from './components/NewOrderSheet';
+import AssignedOrderCall from './components/AssignedOrderCall';
+import ConnectionBanner from './components/ConnectionBanner';
+import MenuCarousel from './components/menu/MenuCarousel';
+import MenuClassic from './components/menu/MenuClassic';
+import { clearQueue } from './offlineQueue';
 
 const UNIT_KEY = 'unit';
 const TOKEN_KEY = 'authToken';
+const SHIFT_STARTED_KEY = 'shiftStartedAt';
+
+// Переключатель дизайна главного экрана:
+//   true  — прежний вид (MenuClassic), сейчас активен;
+//   false — карусель активных заказов (MenuCarousel).
+// Оба компонента лежат в components/menu, переключение — только этой строкой.
+const USE_CLASSIC_MENU = true;
 
 const FOREGROUND_SERVICE = {
     notificationTitle: 'Смена активна',
@@ -118,6 +132,8 @@ export default function CourierShiftScreen({ onLogout }) {
 
     const [unit, setUnit] = useState(null);
     const [status, setStatus] = useState('offline');
+    // Начало смены для таймера на главном экране
+    const [shiftStartedAt, setShiftStartedAt] = useState(null);
     const [loading, setLoading] = useState(true);
 
     // Зеркало статуса в ref — источник правды для текущей сессии.
@@ -134,6 +150,22 @@ export default function CourierShiftScreen({ onLogout }) {
     const [activeTab, setActiveTab] = useState(TAB_TYPES.MENU);
     const [selectedOutlet, setSelectedOutlet] = useState(null);
     const [selectedOrder, setSelectedOrder] = useState(null);
+    // Отложенный переход по тапу на push и временная подсветка заказа
+    const [pushIntent, setPushIntent] = useState(null);
+    const [highlightOrderId, setHighlightOrderId] = useState(null);
+
+    // Диалог-плашка вместо системного Alert
+    const [dialog, setDialog] = useState(null);
+
+    // Результат действия: подтверждать нечего, плашка гаснет сама
+    const notify = useCallback((title, body, tone = 'ok') => {
+        setDialog({ tone, title, body });
+    }, []);
+
+    // Подтверждение действия: показываем кнопки
+    const confirm = useCallback((opts) => {
+        setDialog({ tone: opts.destructive ? 'danger' : 'question', ...opts });
+    }, []);
 
     // Точки выдачи (админ-аккаунты компании) — тянем с сервера, видны всегда
     const [pickupPoints, setPickupPoints] = useState([]);
@@ -157,10 +189,27 @@ export default function CourierShiftScreen({ onLogout }) {
         releaseOrder,
         completeOrder,
         enrouteOrder,
+        pendingCount,
+        offline,
+        syncing,
+        retryNow,
     } = useOrdersWebSocket({
         unit,
-        onAssignedOrder: (order) => setAssignedToast(order),
+        // Назначенный лично заказ важнее свободного и всегда перекрывает его
+        onAssignedOrder: (order) => setAssignedToast({ order, variant: 'assigned' }),
+        // Свободный заказ: раньше был только звук, и курьер не понимал,
+        // что именно приехало и где это искать. Не вытесняет полноэкранное
+        // уведомление о назначении, если оно сейчас показано.
+        onNewOrder: (order) =>
+            setAssignedToast((prev) =>
+                prev?.variant === 'assigned' ? prev : { order, variant: 'new' }
+            ),
         onUnauthorized: () => sessionExpiredRef.current?.(),
+        // Действие из очереди отклонено сервером окончательно (заказ забрал
+        // другой курьер / отменён) — объясняем курьеру, что произошло
+        onConflict: (op, reason) => {
+            notify(t('connection.conflictTitle'), reason || t('common.error'), 'danger');
+        },
     });
 
     // ── Загрузка unit при старте ────────────────────────────────────────────
@@ -217,6 +266,7 @@ export default function CourierShiftScreen({ onLogout }) {
     // ── остановка фоновой геолокации ──────────────────
     const stopTracking = async () => {
         try { await AsyncStorage.removeItem('onShift'); } catch { }
+        try { await AsyncStorage.removeItem(SHIFT_STARTED_KEY); } catch { }
         try {
             const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
             if (started) await Location.stopLocationUpdatesAsync(TASK_NAME);
@@ -235,6 +285,9 @@ export default function CourierShiftScreen({ onLogout }) {
             try {
                 // гарантируем, что смена выключена и фоновой подписки нет
                 await AsyncStorage.removeItem('onShift');
+                // и таймер не показывает время прошлой сессии
+                await AsyncStorage.removeItem(SHIFT_STARTED_KEY);
+                setShiftStartedAt(null);
                 const started = await Location.hasStartedLocationUpdatesAsync(TASK_NAME);
                 if (started) await Location.stopLocationUpdatesAsync(TASK_NAME);
             } catch { }
@@ -258,16 +311,107 @@ export default function CourierShiftScreen({ onLogout }) {
     }, []);
 
     // ── Push-уведомления: регистрация токена + переход по тапу ───────────────
+    // Тап сохраняем как «намерение»: в момент нажатия списки могут быть ещё не
+    // загружены (особенно при холодном старте), поэтому сам переход выполняет
+    // эффект ниже — когда становится понятно, чей это заказ и с какой точки.
     useEffect(() => {
         registerPushToken();
-        const unsubscribe = addOrderTapListener(() => {
-            // Тап по уведомлению о новом заказе → открыть список «Все»
+
+        const unsubscribe = addOrderTapListener((data) => {
+            setPushIntent({
+                orderId:   data?.orderId ?? null,
+                courierId: data?.courierId ?? null,
+                outlet:    data?.outlet ?? null,
+                ts:        Date.now(),
+            });
+            // подтягиваем свежие списки, чтобы решение было по актуальным данным
+            fetchAvailable();
+            fetchMy();
+        });
+
+        // Приложение открыли тапом по уведомлению из закрытого состояния
+        getInitialOrderTap().then((data) => {
+            if (!data) return;
+            setPushIntent({
+                orderId:   data.orderId ?? null,
+                courierId: data.courierId ?? null,
+                outlet:    data.outlet ?? null,
+                ts:        Date.now(),
+            });
+        });
+
+        return unsubscribe;
+    }, [fetchAvailable, fetchMy]);
+
+    // Выполнение отложенного перехода по push
+    useEffect(() => {
+        if (!pushIntent) return;
+
+        const id = pushIntent.orderId;
+        if (id == null) {
+            // без идентификатора вести некуда — просто открываем «Все»
             setSelectedOrder(null);
             setSelectedOutlet(null);
             setActiveTab(TAB_TYPES.ALL);
-        });
-        return unsubscribe;
-    }, []);
+            setPushIntent(null);
+            return;
+        }
+
+        const mine = myOrders.find((o) => String(o.id) === String(id));
+        const free = availableOrders.find((o) => String(o.id) === String(id));
+        const found = mine || free;
+
+        // Списки могли ещё не приехать — ждём их, но не дольше 8 секунд,
+        // иначе тап останется без реакции при плохой связи.
+        if (!found && Date.now() - pushIntent.ts < 8000) return;
+
+        const myUnitId = unit?.unitId ?? null;
+        const isMine =
+            !!mine ||
+            (pushIntent.courierId != null &&
+                myUnitId != null &&
+                String(pushIntent.courierId) === String(myUnitId));
+
+        setSelectedOrder(null);
+
+        if (isMine) {
+            // заказ назначен курьеру → «Мои заказы»
+            setSelectedOutlet(null);
+            setActiveTab(TAB_TYPES.MY);
+        } else {
+            // свободный заказ → «Все»; если есть точка комплектации, открываем её
+            setActiveTab(TAB_TYPES.ALL);
+            const outletName = String(
+                found?.outlet || found?.pickupName || pushIntent.outlet || ''
+            ).trim();
+
+            if (outletName) {
+                const outlets = buildOutlets(availableOrders, pickupPoints);
+                const match = outlets.find(
+                    (o) => o.name.trim().toLowerCase() === outletName.toLowerCase()
+                );
+                setSelectedOutlet(
+                    match ?? { id: `x-${outletName.toLowerCase()}`, name: outletName, serverName: outletName, count: 1 }
+                );
+            } else {
+                // Точка не назначена: ведём в список ВСЕХ заказов (карточка «Все точки»),
+                // а не на экран выбора точки — иначе курьер не видит сам заказ и не
+                // понимает, куда идти дальше.
+                setSelectedOutlet({ id: 'all', name: t('allOrders.allOutlets'), isAll: true });
+            }
+        }
+
+        setHighlightOrderId(String(id));
+        setPushIntent(null);
+    }, [pushIntent, myOrders, availableOrders, pickupPoints, unit, t]);
+
+    // Подсветка нового заказа гаснет сама
+    useEffect(() => {
+        if (!highlightOrderId) return;
+        const tm = setTimeout(() => setHighlightOrderId(null), 6000);
+        return () => clearTimeout(tm);
+    }, [highlightOrderId]);
+
 
     // Пришёл push при открытом приложении — сразу перечитываем списки.
     // Это второй независимый от WebSocket путь доставки заказа в UI:
@@ -337,6 +481,9 @@ export default function CourierShiftScreen({ onLogout }) {
             // на случай, если токен уже истёк и пинг не пройдёт
             try { await stopShift(); } catch { await stopTracking(); }
             try { await unregisterPushToken(); } catch { }
+            // Очередь принадлежит конкретному курьеру: иначе после смены
+            // аккаунта его действия ушли бы от имени другого человека.
+            try { await clearQueue(); } catch { }
             await AsyncStorage.multiRemove([
                 TOKEN_KEY, UNIT_KEY, 'courierId', 'myOrders', 'onShift',
             ]);
@@ -371,13 +518,33 @@ export default function CourierShiftScreen({ onLogout }) {
         };
     }, [forceLogout]);
 
+    // ── Аппаратная кнопка «Назад» (Android) ─────────────────────────────────
+    // Без этого обработчика системная кнопка сразу сворачивала приложение,
+    // даже если открыты детали заказа или список точек. Разбираем экраны
+    // в порядке вложенности; на главной отдаём управление системе.
+    useEffect(() => {
+        const onBack = () => {
+            if (settingsVisible) { setSettingsVisible(false); return true; }
+            if (reportVisible)   { setReportVisible(false);   return true; }
+            if (selectedOrder)   { setSelectedOrder(null);    return true; }
+            if (selectedOutlet)  { setSelectedOutlet(null);   return true; }
+            if (activeTab !== TAB_TYPES.MENU) { setActiveTab(TAB_TYPES.MENU); return true; }
+            return false; // на главной — стандартное поведение (свернуть приложение)
+        };
+        const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+        return () => { try { sub.remove(); } catch { } };
+    }, [settingsVisible, reportVisible, selectedOrder, selectedOutlet, activeTab]);
+
     // ── Выход ───────────────────────────────────────────────────────────────
-    const handleExit = async () => {
+    const doExit = async () => {
         try {
             // stopShift = стоп трекинга + прощальный пинг off_shift,
             // иначе метка курьера остаётся висеть на карте у админов
             await stopShift();
             await unregisterPushToken(); // снять токен на сервере, пока есть авторизация
+
+            // Очередь привязана к курьеру — не переносим её в чужую сессию
+            try { await clearQueue(); } catch { }
 
             await AsyncStorage.removeItem(TOKEN_KEY);
             await AsyncStorage.removeItem(UNIT_KEY);
@@ -389,6 +556,26 @@ export default function CourierShiftScreen({ onLogout }) {
         } catch {
             Alert.alert(t('common.error'), t('shift.errLogoutFail'));
         }
+    };
+
+    const handleExit = async () => {
+        // Неотправленные действия при выходе будут потеряны — предупреждаем,
+        // но сначала пробуем дослать их: обычно связь к этому моменту уже есть.
+        if (pendingCount > 0) {
+            try { await retryNow(); } catch { }
+        }
+        if (pendingCount > 0) {
+            Alert.alert(
+                t('connection.conflictTitle'),
+                t('connection.pendingOnLogout', { count: pendingCount }),
+                [
+                    { text: t('common.cancel'), style: 'cancel' },
+                    { text: t('shift.logout'), style: 'destructive', onPress: doExit },
+                ]
+            );
+            return;
+        }
+        await doExit();
     };
 
     const ensurePermissions = async () => {
@@ -414,6 +601,12 @@ export default function CourierShiftScreen({ onLogout }) {
                 });
             }
             await AsyncStorage.setItem('onShift', '1');
+            // Момент начала смены — для таймера на главном экране. Хранится
+            // отдельно от флага, чтобы переживать перезапуск приложения.
+            const startedAt = new Date().toISOString();
+            await AsyncStorage.setItem(SHIFT_STARTED_KEY, startedAt);
+            setShiftStartedAt(startedAt);
+
             const isRegistered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
             if (!isRegistered) {
                 await Location.startLocationUpdatesAsync(TASK_NAME, {
@@ -448,6 +641,8 @@ export default function CourierShiftScreen({ onLogout }) {
             //    даже если что-то ниже упадёт.
             await stopTracking();
             setStatus('offline');
+            try { await AsyncStorage.removeItem(SHIFT_STARTED_KEY); } catch { }
+            setShiftStartedAt(null);
 
             // 2) Прощальный пинг off_shift — чтобы клиент убрал курьера с карты.
             //    Шлём ВСЕГДА (координаты необязательны): сервер по off_shift
@@ -479,6 +674,34 @@ export default function CourierShiftScreen({ onLogout }) {
         }
     };
 
+    // ВАЖНО: этот useMemo обязан стоять ДО раннего return по `loading`.
+    // Хуки нельзя вызывать условно: пока шла загрузка, хук не выполнялся,
+    // а после неё выполнялся — React падал с «Rendered more hooks than
+    // during the previous render».
+    //
+    // Счётчики на вкладках таб-бара. «Мои» считаем только по активным заказам:
+    // выполненные за смену копятся, и общее число ничего бы не говорило.
+    // Тот же критерий, что делит секции в MyOrdersScreen.
+    const tabCounts = useMemo(() => ({
+        [TAB_TYPES.ALL]: availableOrders.length,
+        [TAB_TYPES.MY]: myOrders.filter(
+            (o) => !(o.completed || String(o.status || '').toLowerCase() === 'completed')
+        ).length,
+    }), [availableOrders, myOrders]);
+
+    // selectedOrder — снимок на момент открытия: если статус изменится по WS
+    // (заказ забрал другой курьер, диспетчер отменил), детали покажут устаревшие
+    // данные и не те кнопки. Берём актуальную версию заказа из списков по id.
+    const selectedOrderLive = useMemo(() => {
+        if (!selectedOrder) return null;
+        const id = selectedOrder.id ?? selectedOrder.order_id;
+        return (
+            myOrders.find((o) => String(o.id) === String(id)) ||
+            availableOrders.find((o) => String(o.id) === String(id)) ||
+            selectedOrder // заказ уже вне списков (завершён) — показываем снимок
+        );
+    }, [selectedOrder, myOrders, availableOrders]);
+
     if (loading) {
         return (
             // <SafeAreaView style={styles.safeContainer} edges={['top', 'left', 'right', 'bottom']}>
@@ -500,142 +723,147 @@ export default function CourierShiftScreen({ onLogout }) {
     const initial = nickname.length > 0 ? nickname[0].toUpperCase() : '?';
 
     function renderTabContent() {
+        // Детали заказа — слой поверх вкладок, а не часть вкладки «Все».
+        // Раньше они жили внутри case ALL, поэтому открытие заказа из «Мои»
+        // принудительно переключало вкладку, и «Назад» возвращал курьера
+        // в «Все» вместо «Мои заказы». Теперь вкладка не меняется, и возврат
+        // всегда ведёт туда, откуда заказ открыли.
+        if (selectedOrderLive) {
+            return (
+                <OrderDetailsScreenModern
+                    order={selectedOrderLive}
+                    // имя точки берём из самого заказа: при открытии из «Мои»
+                    // выбранной точки нет, и раньше показывался прочерк
+                    outletName={
+                        selectedOrderLive.outlet ||
+                        selectedOrderLive.pickupName ||
+                        selectedOutlet?.name ||
+                        '—'
+                    }
+                    myUnitId={unit?.unitId}
+                    onBack={() => setSelectedOrder(null)}
+                    onTake={(order) => {
+                        // Заказ переезжает в «Мои» мгновенно (оптимистично), поэтому и
+                        // подтверждение показываем сразу. Раньше Alert ждал ответа
+                        // сервера и появлялся с задержкой — уже после того, как заказ
+                        // исчез из списка, и выглядело это как сбой.
+                        setSelectedOrder(null);
+                        notify(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
+
+                        // Без анимации ухода: экран деталей закрывается, и списка
+                        // под ним ещё не видно — уезжать было бы нечему.
+                        assignOrder(order.id).catch((e) => {
+                            // сюда попадаем только при конфликте: заказ уже забрал другой
+                            notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                        });
+                    }}
+                    onEnroute={(order) => {
+                        // оптимистично: статус меняем сразу, отправку берёт на себя очередь
+                        setMyOrders((prev) =>
+                            prev.map((o) =>
+                                o.id === order.id ? { ...o, status: 'enroute' } : o
+                            )
+                        );
+                        setSelectedOrder(null);
+                        enrouteOrder(order.id).catch((e) => {
+                            // сюда попадаем только при конфликте — заказ уже закрыт/чужой
+                            notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                        });
+                    }}
+                    onCall={(phone) => {
+                        Linking.openURL(`tel:${phone}`).catch(() => { });
+                    }}
+                />
+            );
+        }
+
         switch (activeTab) {
             case TAB_TYPES.MENU:
+                // Прежний вид сохранён в MenuClassic — вернуть его можно,
+                // поставив USE_CLASSIC_MENU = true в начале файла.
+                if (USE_CLASSIC_MENU) {
+                    return (
+                        <MenuClassic
+                            styles={styles}
+                            COLORS={COLORS}
+                            t={t}
+                            initial={initial}
+                            nickname={nickname}
+                            idText={idText}
+                            connected={connected}
+                            wsPulse={wsPulse}
+                            status={status}
+                            statusFade={statusFade}
+                            onOpenReport={() => setReportVisible(true)}
+                            onOpenSettings={() => setSettingsVisible(true)}
+                            onStartShift={startShift}
+                            onStopShift={stopShift}
+                            onExit={handleExit}
+                        />
+                    );
+                }
+
                 return (
-                    <View style={styles.container}>
-                        <View style={styles.headerCard}>
-                            <View style={styles.avatarCircle}>
-                                <Text style={styles.avatarText}>{initial}</Text>
-                            </View>
-
-                            <View style={styles.infoBlock}>
-                                <Text style={styles.nickname}>{nickname}</Text>
-                                <Text style={styles.unitId}>{t('shift.idLabel')}: {idText}</Text>
-
-                                <Animated.View
-                                    style={[
-                                        styles.wsBadge,
-                                        connected ? styles.wsBadgeOnline : styles.wsBadgeOffline,
-                                        { opacity: wsPulse },
-                                    ]}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.wsBadgeText,
-                                            connected ? styles.wsOnline : styles.wsOffline,
-                                        ]}
-                                    >
-                                        {connected ? t('shift.wsOnline') : t('shift.wsConnecting')}
-                                    </Text>
-                                </Animated.View>
-                            </View>
-
-                            <View style={styles.statusBlock}>
-                                <Animated.View
-                                    style={[
-                                        styles.shiftBadge,
-                                        status === 'online'
-                                            ? styles.shiftBadgeOnline
-                                            : styles.shiftBadgeOffline,
-                                        { opacity: statusFade },
-                                    ]}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.statusText,
-                                            status === 'online' ? styles.online : styles.offline,
-                                        ]}
-                                    >
-                                        {status === 'online' ? t('shift.onShift') : t('shift.offline')}
-                                    </Text>
-                                </Animated.View>
-
-                                <PressableScale
-                                    style={styles.settingsButton}
-                                    onPress={() => setReportVisible(true)}
-                                    scaleTo={0.9}
-                                >
-                                    <Text style={styles.settingsButtonText}><BarChart3 color={COLORS.accent} /></Text>
-                                </PressableScale>
-
-                                <PressableScale
-                                    style={styles.settingsButton}
-                                    onPress={() => setSettingsVisible(true)}
-                                    scaleTo={0.9}
-                                >
-                                    <Text style={styles.settingsButtonText}><Settings color={COLORS.accent} /></Text>
-                                </PressableScale>
-                            </View>
-                        </View>
-
-                        <View style={styles.sectionCard}>
-                            <Text style={styles.sectionTitle}>{t('shift.manageTitle')}</Text>
-                            <Text style={styles.sectionSubtitle}>
-                                {t('shift.manageSubtitle')}
-                            </Text>
-
-                            <View style={styles.controls}>
-                                <PressableScale style={styles.primaryButton} onPress={startShift}>
-                                    <Text style={styles.primaryButtonText}>{t('shift.start')}</Text>
-                                </PressableScale>
-
-                                <PressableScale style={styles.ghostButton} onPress={stopShift}>
-                                    <Text style={styles.ghostButtonText}>{t('shift.stop')}</Text>
-                                </PressableScale>
-
-                                <PressableScale style={styles.exitButton} onPress={handleExit}>
-                                    <Text style={styles.exitButtonText}>{t('shift.logout')}</Text>
-                                </PressableScale>
-                            </View>
-                        </View>
-                    </View>
+                    <MenuCarousel
+                        COLORS={COLORS}
+                        t={t}
+                        initial={initial}
+                        nickname={nickname}
+                        idText={idText}
+                        connected={connected}
+                        wsPulse={wsPulse}
+                        status={status}
+                        statusFade={statusFade}
+                        shiftStartedAt={shiftStartedAt}
+                        // в карусели только активные заказы: выполненные листать незачем
+                        orders={myOrders.filter(
+                            (o) => !(o.completed || String(o.status || '').toLowerCase() === 'completed')
+                        )}
+                        onOpenOrder={(order) => setSelectedOrder(order)}
+                        onCall={(phone) => {
+                            if (phone) Linking.openURL(`tel:${phone}`).catch(() => { });
+                        }}
+                        onEnroute={(orderId) => {
+                            setMyOrders((prev) =>
+                                prev.map((o) => (o.id === orderId ? { ...o, status: 'enroute' } : o))
+                            );
+                            enrouteOrder(orderId).catch((e) => {
+                                notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                            });
+                        }}
+                        onComplete={(orderId) => {
+                            // то же подтверждение, что и в списке «Мои заказы»
+                            confirm({
+                                title: t('dialog.completeTitle'),
+                                body: t('dialog.completeBody'),
+                                confirmText: t('dialog.completeConfirm'),
+                                onConfirm: () => {
+                                    setMyOrders((prev) =>
+                                        prev.map((o) =>
+                                            o.id === orderId
+                                                ? { ...o, completed: true, completedAt: new Date().toISOString() }
+                                                : o
+                                        )
+                                    );
+                                    completeOrder(orderId).catch((e) => {
+                                        notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                                    });
+                                },
+                            });
+                        }}
+                        onOpenReport={() => setReportVisible(true)}
+                        onOpenSettings={() => setSettingsVisible(true)}
+                        onStartShift={startShift}
+                        onStopShift={stopShift}
+                        onExit={handleExit}
+                    />
                 );
+
 
             case TAB_TYPES.ALL:
                 return (
                     <View style={{ flex: 1 }}>
-                        {selectedOrder ? (
-                            <OrderDetailsScreenModern
-                                order={selectedOrder}
-                                outletName={selectedOutlet?.name ?? '—'}
-                                myUnitId={unit?.unitId}
-                                onBack={() => setSelectedOrder(null)}
-                                onTake={(order) => {
-                                    (async () => {
-                                        try {
-                                            await assignOrder(order.id);
-                                            setSelectedOrder(null);
-                                            Alert.alert(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
-                                        } catch (e) {
-                                            Alert.alert(t('common.error'), e.message);
-                                        }
-                                    })();
-                                }}
-                                onEnroute={(order) => {
-                                    (async () => {
-                                        try {
-                                            await enrouteOrder(order.id);
-                                            setMyOrders((prev) =>
-                                                prev.map((o) =>
-                                                    o.id === order.id ? { ...o, status: 'enroute' } : o
-                                                )
-                                            );
-                                            setSelectedOrder(null);
-                                            Alert.alert(
-                                                t('orderDetails.enrouteOkTitle', { defaultValue: 'В пути' }),
-                                                t('orderDetails.enrouteOkBody', { defaultValue: 'Статус заказа обновлён' })
-                                            );
-                                        } catch (e) {
-                                            Alert.alert(t('common.error'), e.message);
-                                        }
-                                    })();
-                                }}
-                                onCall={(phone) => {
-                                    Linking.openURL(`tel:${phone}`).catch(() => { });
-                                }}
-                            />
-                        ) : !selectedOutlet ? (
+                        {!selectedOutlet ? (
                             <AllOrdersScreen
                                 useSafeArea={false}
                                 outlets={buildOutlets(availableOrders, pickupPoints)}
@@ -650,19 +878,18 @@ export default function CourierShiftScreen({ onLogout }) {
                                 companyId={idText}
                                 companyTitle={nickname}
                                 outletName={selectedOutlet?.name}
+                                highlightOrderId={highlightOrderId}
                                 onBack={() => setSelectedOutlet(null)}
                                 onRefresh={fetchAvailable}
                                 onOpenOrder={(order) => setSelectedOrder(order)}
                                 onActionPress={(order) => {
-                                    // «+» = взять заказ на себя (как кнопка «Взять» в деталях)
-                                    (async () => {
-                                        try {
-                                            await assignOrder(order.id || order.order_id);
-                                            Alert.alert(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
-                                        } catch (e) {
-                                            Alert.alert(t('common.error'), e.message);
-                                        }
-                                    })();
+                                    // «+» = взять заказ на себя (как кнопка «Взять» в деталях).
+                                    // Подтверждение показываем сразу: заказ уже перенесён в «Мои»
+                                    const id = order.id || order.order_id;
+                                    notify(t('shift.takeSuccessTitle'), t('shift.takeSuccessBody'));
+                                    assignOrder(id).catch((e) => {
+                                        notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                                    });
                                 }}
                             />
                         )}
@@ -674,29 +901,25 @@ export default function CourierShiftScreen({ onLogout }) {
                     <MyOrdersScreen
                         myOrders={myOrders}
                         useSafeArea={false}
+                        highlightOrderId={highlightOrderId}
                         onOpenOrder={(order) => {
+                            // вкладку не меняем: «Назад» из деталей вернёт в «Мои заказы»
                             setSelectedOrder(order);
-                            setActiveTab(TAB_TYPES.ALL);
                         }}
                         onRemoveOrder={(orderId) => {
-                            Alert.alert(
-                                t('shift.removeTitle'),
-                                t('shift.removeBody'),
-                                [
-                                    { text: t('common.cancel'), style: 'cancel' },
-                                    {
-                                        text: t('common.delete'),
-                                        style: 'destructive',
-                                        onPress: async () => {
-                                            try {
-                                                await releaseOrder(orderId);
-                                            } catch (e) {
-                                                Alert.alert(t('common.error'), e.message);
-                                            }
-                                        },
-                                    },
-                                ]
-                            );
+                            // Отказ от заказа необратим — спрашиваем подтверждение
+                            confirm({
+                                destructive: true,
+                                title: t('shift.removeTitle'),
+                                body: t('shift.removeBody'),
+                                confirmText: t('dialog.removeConfirm'),
+                                onConfirm: () => {
+                                    releaseOrder(orderId).catch((e) => {
+                                        // офлайн сюда не приводит — только реальный конфликт
+                                        notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                                    });
+                                },
+                            });
                         }}
                         onEnrouteOrder={(orderId) => {
                             // оптимистично ставим статус «в пути» → кнопка сменится на «Готово»
@@ -705,23 +928,32 @@ export default function CourierShiftScreen({ onLogout }) {
                                     o.id === orderId ? { ...o, status: 'enroute' } : o
                                 )
                             );
-                            // фиксируем на сервере: статус → enroute + WS-оповещение (карта)
+                            // ставим в очередь: уйдёт сразу или при появлении связи
                             enrouteOrder(orderId).catch((e) => {
-                                Alert.alert(t('common.error'), e?.message || t('common.error'));
+                                notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
                             });
                         }}
                         onCompleteOrder={(orderId) => {
-                            // оптимистично помечаем выполненным (мгновенно уходит в секцию «выполнено»)
-                            setMyOrders((prev) =>
-                                prev.map((o) =>
-                                    o.id === orderId
-                                        ? { ...o, completed: true, completedAt: new Date().toISOString() }
-                                        : o
-                                )
-                            );
-                            // фиксируем на сервере: статус → completed + WS-оповещение
-                            completeOrder(orderId).catch((e) => {
-                                Alert.alert(t('common.error'), e?.message || t('common.error'));
+                            // Закрытие заказа отменить нельзя, а кнопка стоит рядом с «В путь»
+                            // и нажимается на ходу — поэтому спрашиваем подтверждение.
+                            confirm({
+                                title: t('dialog.completeTitle'),
+                                body: t('dialog.completeBody'),
+                                confirmText: t('dialog.completeConfirm'),
+                                onConfirm: () => {
+                                    // оптимистично помечаем выполненным (уходит в секцию «выполнено»)
+                                    setMyOrders((prev) =>
+                                        prev.map((o) =>
+                                            o.id === orderId
+                                                ? { ...o, completed: true, completedAt: new Date().toISOString() }
+                                                : o
+                                        )
+                                    );
+                                    // ставим в очередь: уйдёт сразу или при появлении связи
+                                    completeOrder(orderId).catch((e) => {
+                                        notify(t('connection.conflictTitle'), e?.message || t('common.error'), 'danger');
+                                    });
+                                },
                             });
                         }}
                     />
@@ -739,10 +971,27 @@ export default function CourierShiftScreen({ onLogout }) {
             <View style={styles.bgCircleTop} pointerEvents="none" />
             <View style={styles.bgCircleBottom} pointerEvents="none" />
 
+            {/* Состояние связи и неотправленных действий */}
+            <ConnectionBanner
+                pendingCount={pendingCount}
+                offline={offline}
+                syncing={syncing}
+                onRetry={retryNow}
+            />
+
             <View style={styles.mainContent}>{renderTabContent()}</View>
 
             <View style={styles.tabBarWrapper}>
-                <TabNavigationBar activeTab={activeTab} onTabChange={setActiveTab} />
+                <TabNavigationBar
+                    activeTab={activeTab}
+                    counts={tabCounts}
+                    onTabChange={(tab) => {
+                        // Детали — слой поверх вкладок, поэтому при переходе по
+                        // таб-бару их нужно закрыть, иначе нажатие «не сработает»
+                        setSelectedOrder(null);
+                        setActiveTab(tab);
+                    }}
+                />
             </View>
 
             <SettingsModal
@@ -764,15 +1013,43 @@ export default function CourierShiftScreen({ onLogout }) {
                 onClose={() => setReportVisible(false)}
             />
 
-            <OrderAssignedToast
-                order={assignedToast}
-                onDismiss={() => setAssignedToast(null)}
-                onPress={() => {
-                    setSelectedOrder(null);
-                    setSelectedOutlet(null);
-                    setActiveTab(TAB_TYPES.MY);
-                }}
-            />
+            {/* Компактная плашка вместо системного Alert */}
+            <OrderDialog dialog={dialog} onDismiss={() => setDialog(null)} />
+
+            {/* Свободный заказ — нижний лист: заметно, но работать не мешает */}
+            {assignedToast?.variant === 'new' && (
+                <NewOrderSheet
+                    order={assignedToast.order}
+                    onDismiss={() => setAssignedToast(null)}
+                    onPress={(order) => {
+                        // тот же маршрут, что и по тапу на системный push
+                        setPushIntent({
+                            orderId: order?.id ?? null,
+                            courierId: null,
+                            outlet: order?.outlet ?? order?.pickupName ?? null,
+                            ts: Date.now(),
+                        });
+                        setAssignedToast(null);
+                    }}
+                />
+            )}
+
+            {/* Назначенный лично — полноэкранный вызов, сам не гаснет */}
+            {assignedToast?.variant === 'assigned' && (
+                <AssignedOrderCall
+                    order={assignedToast.order}
+                    onDismiss={() => setAssignedToast(null)}
+                    onPress={(order) => {
+                        setPushIntent({
+                            orderId: order?.id ?? null,
+                            courierId: unit?.unitId ?? null,
+                            outlet: order?.outlet ?? order?.pickupName ?? null,
+                            ts: Date.now(),
+                        });
+                        setAssignedToast(null);
+                    }}
+                />
+            )}
         </SafeAreaView>
     );
 }

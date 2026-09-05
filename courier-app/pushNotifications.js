@@ -161,6 +161,31 @@ export function addOrderReceivedListener(handler) {
     };
 }
 
+// Тап по уведомлению, когда приложение было полностью закрыто.
+// addNotificationResponseReceivedListener в этом случае не срабатывает —
+// система запускает приложение, и ответ нужно забрать вручную.
+// Старые ответы отбрасываем по времени, иначе курьера будет уносить
+// на заказ недельной давности при каждом обычном запуске.
+const COLD_START_MAX_AGE_MS = 2 * 60 * 1000;
+
+export async function getInitialOrderTap() {
+    try {
+        const resp = await Notifications.getLastNotificationResponseAsync();
+        const notification = resp?.notification;
+        const data = notification?.request?.content?.data;
+        if (!data || data.type !== 'order_created') return null;
+
+        const date = notification?.date;               // мс (Android) или сек (iOS)
+        if (date) {
+            const ms = date < 1e12 ? date * 1000 : date;
+            if (Date.now() - ms > COLD_START_MAX_AGE_MS) return null;
+        }
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+
 // Подписка на тап по уведомлению. Возвращает функцию отписки.
 export function addOrderTapListener(handler) {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {

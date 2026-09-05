@@ -24,6 +24,31 @@ const ru = {
         errNetwork: 'Ошибка сети',
         errTryLater: 'Попробуйте позже',
     },
+    menu: {
+        report: 'Отчёт',
+        call: 'Позвонить',
+        counter: '{{current}} из {{total}}',
+        statePickup: 'ЗАБРАТЬ',
+        stateDelivering: 'ВЕЗУ',
+        noOrdersTitle: 'Заказов пока нет',
+        noOrdersOnShift: 'Новые заказы появятся здесь. Свободные можно посмотреть на вкладке «Все».',
+        noOrdersOffShift: 'Начните смену, чтобы получать заказы.',
+    },
+    dialog: {
+        confirm: 'Подтвердить',
+        gotIt: 'Понятно',
+        completeTitle: 'Закрыть заказ?',
+        completeBody: 'Подтвердите, что заказ доставлен клиенту. Отменить это действие нельзя.',
+        completeConfirm: 'Закрыть заказ',
+        removeConfirm: 'Отказаться',
+    },
+    connection: {
+        pending: 'Нет связи. Действия сохранены ({{count}}) и отправятся сами',
+        offline: 'Нет связи. Данные могут быть неактуальны',
+        queued: 'Сохранено. Отправим, как появится связь',
+        conflictTitle: 'Действие не применено',
+        pendingOnLogout: 'Есть неотправленные действия ({{count}}). Выйти всё равно?',
+    },
     shift: {
         loading: 'Загрузка данных курьера...',
         courier: 'Курьер',
@@ -149,7 +174,12 @@ const ru = {
     },
     toast: {
         assignedTitle: 'Вам назначен заказ',
+        newTitle: 'Новый заказ',
         open: 'Открыть',
+        later: 'Позже',
+        hide: 'Скрыть',
+        noOutlet: 'Точка не назначена',
+        scheduledTo: 'К {{time}}',
     },
 };
 
@@ -170,6 +200,31 @@ const en = {
         errLogin: 'Sign-in error',
         errNetwork: 'Network error',
         errTryLater: 'Try again later',
+    },
+    menu: {
+        report: 'Report',
+        call: 'Call',
+        counter: '{{current}} of {{total}}',
+        statePickup: 'PICK UP',
+        stateDelivering: 'DELIVERING',
+        noOrdersTitle: 'No orders yet',
+        noOrdersOnShift: 'New orders will appear here. Available ones are on the “All” tab.',
+        noOrdersOffShift: 'Start your shift to receive orders.',
+    },
+    dialog: {
+        confirm: 'Confirm',
+        gotIt: 'Got it',
+        completeTitle: 'Close the order?',
+        completeBody: 'Confirm that the order has been delivered. This cannot be undone.',
+        completeConfirm: 'Close order',
+        removeConfirm: 'Give up',
+    },
+    connection: {
+        pending: 'No connection. Actions saved ({{count}}) and will be sent automatically',
+        offline: 'No connection. Data may be out of date',
+        queued: 'Saved. Will be sent once you are back online',
+        conflictTitle: 'Action was not applied',
+        pendingOnLogout: 'You have unsent actions ({{count}}). Sign out anyway?',
     },
     shift: {
         loading: 'Loading courier data...',
@@ -296,7 +351,12 @@ const en = {
     },
     toast: {
         assignedTitle: 'Order assigned to you',
+        newTitle: 'New order',
         open: 'Open',
+        later: 'Later',
+        hide: 'Hide',
+        noOutlet: 'Pickup point not set',
+        scheduledTo: 'By {{time}}',
     },
 };
 
@@ -317,6 +377,31 @@ const lv = {
         errLogin: 'Pieslēgšanās kļūda',
         errNetwork: 'Tīkla kļūda',
         errTryLater: 'Mēģiniet vēlāk',
+    },
+    menu: {
+        report: 'Atskaite',
+        call: 'Zvanīt',
+        counter: '{{current}} no {{total}}',
+        statePickup: 'PAŅEMT',
+        stateDelivering: 'VEDU',
+        noOrdersTitle: 'Pasūtījumu vēl nav',
+        noOrdersOnShift: 'Jaunie pasūtījumi parādīsies šeit. Brīvie ir cilnē «Visi».',
+        noOrdersOffShift: 'Sāciet maiņu, lai saņemtu pasūtījumus.',
+    },
+    dialog: {
+        confirm: 'Apstiprināt',
+        gotIt: 'Sapratu',
+        completeTitle: 'Aizvērt pasūtījumu?',
+        completeBody: 'Apstipriniet, ka pasūtījums ir piegādāts. Šo darbību nevar atsaukt.',
+        completeConfirm: 'Aizvērt pasūtījumu',
+        removeConfirm: 'Atteikties',
+    },
+    connection: {
+        pending: 'Nav savienojuma. Darbības saglabātas ({{count}}) un tiks nosūtītas automātiski',
+        offline: 'Nav savienojuma. Dati var būt novecojuši',
+        queued: 'Saglabāts. Nosūtīsim, tiklīdz būs savienojums',
+        conflictTitle: 'Darbība netika piemērota',
+        pendingOnLogout: 'Ir nenosūtītas darbības ({{count}}). Vai tomēr iziet?',
     },
     shift: {
         loading: 'Notiek kurjera datu ielāde...',
@@ -443,7 +528,12 @@ const lv = {
     },
     toast: {
         assignedTitle: 'Jums piešķirts pasūtījums',
+        newTitle: 'Jauns pasūtījums',
         open: 'Atvērt',
+        later: 'Vēlāk',
+        hide: 'Paslēpt',
+        noOutlet: 'Punkts nav norādīts',
+        scheduledTo: 'Līdz {{time}}',
     },
 };
 

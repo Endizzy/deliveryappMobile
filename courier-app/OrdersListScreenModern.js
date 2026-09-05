@@ -1,5 +1,5 @@
 
-import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -111,6 +111,7 @@ export default function OrdersListScreenModern({
   onActionPress,
   outlet,
   onBack,
+  highlightOrderId = null,   // заказ из push — подсвечиваем и прокручиваем к нему
 }) {
   const { colors: COLORS } = useTheme();
   const { t } = useT();
@@ -169,6 +170,23 @@ export default function OrdersListScreenModern({
 
   const Wrapper = useSafeArea ? SafeAreaView : View;
 
+  // Прокрутка к заказу, ради которого курьер пришёл по уведомлению:
+  // без неё подсветка бесполезна, если заказ оказался внизу длинного списка.
+  const listRef = useRef(null);
+  useEffect(() => {
+    if (!highlightOrderId) return;
+    const idx = data.findIndex(
+      (o) => String(o.id || o.order_id) === String(highlightOrderId)
+    );
+    if (idx < 0) return;
+    const tm = setTimeout(() => {
+      try {
+        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+      } catch (e) { /* onScrollToIndexFailed подстрахует */ }
+    }, 350);
+    return () => clearTimeout(tm);
+  }, [highlightOrderId, data]);
+
   const renderItem = ({ item, index }) => {
     const status = statusLabel(item.status, t);
     const created = formatTimeOnly(item.createdAt);
@@ -187,13 +205,22 @@ export default function OrdersListScreenModern({
     const createdMs = item.createdAt ? new Date(item.createdAt).getTime() : NaN;
     const isFresh = Number.isFinite(createdMs) && Date.now() - createdMs < 12000;
 
+    // Заказ, ради которого курьер пришёл по уведомлению — выделяем явно
+    const isHighlighted =
+      highlightOrderId != null &&
+      String(item.id || item.order_id) === String(highlightOrderId);
+
     return (
       <FadeInView index={index}>
         <PressableScale
           style={styles.card}
           onPress={() => onOpenOrder?.({ id: item.id || item.order_id, ...item })}
         >
-          <FreshHighlight active={isFresh} color={COLORS.softBlue} />
+          {/* Подсветка — тем же готовым механизмом, что и для свежих заказов */}
+          <FreshHighlight
+            active={isFresh || isHighlighted}
+            color={isHighlighted ? (COLORS.softBlueStrong ?? COLORS.softBlue) : COLORS.softBlue}
+          />
 
           {/* Цветная полоса статуса слева */}
           <View style={[styles.stripe, { backgroundColor: status.color }]} />
@@ -303,10 +330,19 @@ export default function OrdersListScreenModern({
           </View>
         ) : (
           <FlatList
+            ref={listRef}
             data={data}
-            extraData={nowTs}
+            extraData={`${nowTs}-${highlightOrderId ?? ''}`}
             keyExtractor={(it) => String(it.id)}
             renderItem={renderItem}
+            // прокрутка к подсвеченному заказу может не сработать, если элемент
+            // ещё не измерен — тогда доскроллим приблизительно и повторим
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+            }}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
             refreshing={loading}
