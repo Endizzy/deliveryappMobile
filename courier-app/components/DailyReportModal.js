@@ -12,7 +12,7 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { X, Wallet, CreditCard, Banknote, RefreshCw } from 'lucide-react-native';
+import { X, Wallet, CreditCard, Banknote, BadgeCheck, RefreshCw } from 'lucide-react-native';
 import { ORIGIN } from '../constants';
 import { useTheme } from '../theme';
 import { useT } from '../i18n';
@@ -54,7 +54,7 @@ export default function DailyReportModal({ visible, onClose }) {
     const totals = data?.totals;
     // сводка по авторизованному курьеру (если сегодня ничего не вёз — нули)
     const summary = data?.mine || {
-        totalOrders: 0, totalSum: 0, cash: 0, card: 0, wire: 0, totalItems: 0,
+        totalOrders: 0, totalSum: 0, cash: 0, card: 0, wire: 0, paid: 0, totalItems: 0,
     };
     // в списке ниже — только курьеры, выполнявшие заказы сегодня
     const rows = (data?.couriers || []).filter((c) => c.totalOrders > 0);
@@ -132,6 +132,12 @@ export default function DailyReportModal({ visible, onClose }) {
                                         <Text style={styles.totalsNum}>€{money(summary.wire)}</Text>
                                     </View>
                                 )}
+                                {summary.paid > 0 && (
+                                    <View style={styles.totalsItem}>
+                                        <Text style={styles.totalsCaption}>{t('report.paid')}</Text>
+                                        <Text style={styles.totalsNum}>€{money(summary.paid)}</Text>
+                                    </View>
+                                )}
                                 <View style={styles.totalsItem}>
                                     <Text style={styles.totalsCaption}>{t('report.total')}</Text>
                                     <Text style={[styles.totalsNum, { color: COLORS.text }]}>€{money(summary.totalSum)}</Text>
@@ -164,6 +170,12 @@ export default function DailyReportModal({ visible, onClose }) {
                                             <View style={styles.breakItem}>
                                                 <Wallet size={13} color={COLORS.muted} strokeWidth={2.2} />
                                                 <Text style={styles.breakText}>€{money(c.wire)}</Text>
+                                            </View>
+                                        )}
+                                        {c.paid > 0 && (
+                                            <View style={styles.breakItem}>
+                                                <BadgeCheck size={13} color={COLORS.muted} strokeWidth={2.2} />
+                                                <Text style={styles.breakText}>€{money(c.paid)}</Text>
                                             </View>
                                         )}
                                         <View style={styles.breakItem}>

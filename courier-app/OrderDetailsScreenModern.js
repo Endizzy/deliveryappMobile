@@ -29,6 +29,7 @@ import {
   User,
   ClipboardList,
   Navigation,
+  BadgeCheck,
 } from 'lucide-react-native';
 
 async function getAuthToken() {
@@ -80,11 +81,31 @@ function parseItems(itemsValue) {
   }
 }
 
+// Заказ уже оплачен до доставки — курьер денег с клиента не берёт
+function isPaidPayment(method) {
+  const m = String(method || '').toLowerCase();
+  return (
+    m.includes('paid') ||
+    m.includes('оплач') ||
+    m.includes('apmaksāt') ||
+    m.includes('apmaksat')
+  );
+}
+
 function paymentLabel(method, t) {
   const m = (method || '').toLowerCase();
+  // «Оплачен» проверяем первым, чтобы описание метода не увело в cash/card
+  if (isPaidPayment(m)) return t('orderDetails.paid');
   if (m.includes('cash') || m.includes('нал')) return t('orderDetails.cash');
   if (m.includes('card') || m.includes('карт')) return t('orderDetails.card');
   return safeText(method);
+}
+
+// Наличные курьер получает на руки — только для них купюра.
+// Карта, перевод и «Оплачен» деньгами на руках не оборачиваются.
+function isCashPayment(method) {
+  const m = String(method || '').toLowerCase();
+  return m.includes('cash') || m.includes('нал');
 }
 
 function statusLabel(status, t) {
@@ -341,12 +362,23 @@ export default function OrderDetailsScreenModern({
           <View style={styles.divider} />
 
           <View style={styles.payRow}>
-            {String(o.paymentMethod || '').toLowerCase().includes('cash') ? (
+            {/* «Оплачен» выделяем зелёной галочкой: курьеру важно с одного
+                взгляда понять, что денег с клиента брать не нужно. */}
+            {isPaidPayment(o.paymentMethod) ? (
+              <BadgeCheck size={18} color={COLORS.success} strokeWidth={2.2} />
+            ) : isCashPayment(o.paymentMethod) ? (
               <Banknote size={18} color={COLORS.primary} strokeWidth={2.2} />
             ) : (
               <CreditCard size={18} color={COLORS.primary} strokeWidth={2.2} />
             )}
-            <Text style={styles.payText}>{paymentLabel(o.paymentMethod, t)}</Text>
+            <Text
+              style={[
+                styles.payText,
+                isPaidPayment(o.paymentMethod) && { color: COLORS.success },
+              ]}
+            >
+              {paymentLabel(o.paymentMethod, t)}
+            </Text>
           </View>
         </View>
 
