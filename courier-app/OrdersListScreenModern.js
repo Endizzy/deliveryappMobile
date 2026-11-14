@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { RotateCw, ChevronLeft, PlusCircle, PackageOpen, Clock } from 'lucide-react-native';
+import { RotateCw, ChevronLeft, PlusCircle, PackageOpen, Clock, CalendarClock } from 'lucide-react-native';
 import { ORIGIN } from './constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from './theme';
@@ -29,6 +29,18 @@ function formatTimeOnly(dateStr) {
   } catch {
     return null;
   }
+}
+
+const LOCALES = { ru: 'ru-RU', en: 'en-GB', lv: 'lv-LV' };
+
+// Дата+время выдачи предзаказа для карточки, напр. «7 сен, 18:30».
+function formatScheduled(dateStr, locale) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const date = d.toLocaleDateString(locale || 'ru-RU', { day: 'numeric', month: 'short' });
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${date}, ${time}`;
 }
 
 // Сколько времени прошло с момента появления заказа (по createdAt).
@@ -54,6 +66,15 @@ function statusLabel(status, t) {
       color: '#2F8CFF',
       bg: 'rgba(47, 140, 255, 0.12)',
       border: 'rgba(47, 140, 255, 0.22)',
+    };
+  }
+
+  if (s === 'preparing') {
+    return {
+      text: t('ordersList.statusPreparing', { defaultValue: 'Готовится' }),
+      color: '#8B5CF6',
+      bg: 'rgba(139, 92, 246, 0.12)',
+      border: 'rgba(139, 92, 246, 0.22)',
     };
   }
 
@@ -114,7 +135,7 @@ export default function OrdersListScreenModern({
   highlightOrderId = null,   // заказ из push — подсвечиваем и прокручиваем к нему
 }) {
   const { colors: COLORS } = useTheme();
-  const { t } = useT();
+  const { t, lang } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
 
   const [fetchedOrders, setFetchedOrders] = useState([]);
@@ -191,6 +212,10 @@ export default function OrdersListScreenModern({
     const status = statusLabel(item.status, t);
     const created = formatTimeOnly(item.createdAt);
     const elapsed = formatElapsed(item.createdAt, nowTs, t);
+    // Предзаказ определяем по наличию scheduledAt — время выдачи остаётся видно
+    // на карточке даже после того, как крон переведёт заказ в «активные».
+    const scheduledLabel = formatScheduled(item.scheduledAt, LOCALES[lang] || 'ru-RU');
+    const isPreorder = !!scheduledLabel;
     const orderNo = item.orderSeq || item.orderNo || item.id;
     const outletLabel = item.outlet || outletName;
 
@@ -246,14 +271,21 @@ export default function OrdersListScreenModern({
               {metaText}
             </Text>
 
-            {/* Строка 3: время создания | сколько висит + статус */}
+            {/* Строка 3: предзаказ → дата/время выдачи; иначе создан | сколько висит */}
             <View style={styles.rowBottom}>
-              <View style={styles.timeChip}>
-                <Clock size={13} color={COLORS.primary} strokeWidth={2.2} />
-                <Text style={styles.timeCreated}>{created || '—'}</Text>
-                {elapsed ? <Text style={styles.timeDivider}>|</Text> : null}
-                {elapsed ? <Text style={styles.timeElapsed}>{elapsed}</Text> : null}
-              </View>
+              {isPreorder ? (
+                <View style={styles.preorderChip}>
+                  <CalendarClock size={13} color="#6366F1" strokeWidth={2.2} />
+                  <Text style={styles.preorderChipText}>{scheduledLabel}</Text>
+                </View>
+              ) : (
+                <View style={styles.timeChip}>
+                  <Clock size={13} color={COLORS.primary} strokeWidth={2.2} />
+                  <Text style={styles.timeCreated}>{created || '—'}</Text>
+                  {elapsed ? <Text style={styles.timeDivider}>|</Text> : null}
+                  {elapsed ? <Text style={styles.timeElapsed}>{elapsed}</Text> : null}
+                </View>
+              )}
 
               <View
                 style={[
@@ -580,6 +612,25 @@ const makeStyles = (COLORS) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.warning,
+  },
+
+  // Чип предзаказа: индиго-акцент, дата+время выдачи
+  preorderChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(99, 102, 241, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.30)',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+
+  preorderChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6366F1',
   },
 
   statusPill: {

@@ -16,6 +16,7 @@
 
 import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle2, AlertTriangle, HelpCircle } from 'lucide-react-native';
 import { useTheme } from '../theme';
 import { useT } from '../i18n';
@@ -26,7 +27,12 @@ export default function OrderDialog({
 }) {
     const { colors: COLORS } = useTheme();
     const { t } = useT();
+    const insets = useSafeAreaInsets();
     const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
+    // Нижний отступ с учётом системной навигации телефона (жесты/кнопки),
+    // чтобы кнопки листа не перекрывались панелью — как у NewOrderSheet.
+    const sheetPaddingBottom = Math.max(26, insets.bottom + 16);
 
     const anim = useRef(new Animated.Value(0)).current;
     const timer = useRef(null);
@@ -85,7 +91,7 @@ export default function OrderDialog({
             )}
 
             <Animated.View
-                style={[styles.sheet, { opacity: anim, transform: [{ translateY }] }]}
+                style={[styles.sheet, { paddingBottom: sheetPaddingBottom, opacity: anim, transform: [{ translateY }] }]}
             >
                 <View style={styles.grab} />
 

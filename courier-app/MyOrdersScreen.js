@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Trash2, ChevronRight, CheckCircle2, Clock, Navigation } from 'lucide-react-native';
+import { Trash2, ChevronRight, ChevronDown, CheckCircle2, Clock, Navigation, CalendarClock } from 'lucide-react-native';
 import { useTheme } from './theme';
 import { useT } from './i18n';
 import FadeInView from './components/anim/FadeInView';
@@ -29,6 +29,18 @@ function formatTimeOnly(dateStr) {
   }
 }
 
+const LOCALES = { ru: 'ru-RU', en: 'en-GB', lv: 'lv-LV' };
+
+// Дата+время выдачи предзаказа для карточки, напр. «7 сен, 18:30».
+function formatScheduled(dateStr, locale) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const date = d.toLocaleDateString(locale || 'ru-RU', { day: 'numeric', month: 'short' });
+  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${date}, ${time}`;
+}
+
 // Сколько времени прошло с момента появления заказа (по createdAt).
 function formatElapsed(createdAt, nowTs, t) {
   if (!createdAt) return null;
@@ -47,6 +59,9 @@ function statusMeta(status, t) {
   const s = (status || '').toLowerCase();
   if (s === 'new') {
     return { text: t('ordersList.statusNew'), color: '#2F8CFF', bg: 'rgba(47, 140, 255, 0.12)', border: 'rgba(47, 140, 255, 0.22)' };
+  }
+  if (s === 'preparing') {
+    return { text: t('ordersList.statusPreparing', { defaultValue: 'Готовится' }), color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.12)', border: 'rgba(139, 92, 246, 0.22)' };
   }
   if (s === 'ready') {
     return { text: t('ordersList.statusReady'), color: '#4ADE80', bg: 'rgba(74, 222, 128, 0.12)', border: 'rgba(74, 222, 128, 0.20)' };
@@ -70,8 +85,12 @@ export default function MyOrdersScreen({
   onCompleteOrder,
 }) {
   const { colors: COLORS } = useTheme();
-  const { t } = useT();
+  const { t, lang } = useT();
   const styles = useMemo(() => makeStyles(COLORS), [COLORS]);
+
+  // Завершённые заказы по умолчанию свёрнуты — чтобы не отвлекали;
+  // раскрываются по нажатию на заголовок секции.
+  const [completedOpen, setCompletedOpen] = useState(false);
 
   // Тик раз в минуту — чтобы таймер «сколько висит» оживал
   const [nowTs, setNowTs] = useState(Date.now());
@@ -102,6 +121,9 @@ export default function MyOrdersScreen({
     const customer = item.customer || '—';
     const created = formatTimeOnly(item.createdAt) || '—';
     const elapsed = isCompleted ? null : formatElapsed(item.createdAt, nowTs, t);
+    // Предзаказ — по наличию scheduledAt; показываем дату/время выдачи
+    const scheduledLabel = formatScheduled(item.scheduledAt, LOCALES[lang] || 'ru-RU');
+    const isPreorder = !!scheduledLabel;
 
     const meta = statusMeta(item.status, t);
     const stripeColor = isCompleted ? COLORS.success : meta.color;
@@ -143,14 +165,21 @@ export default function MyOrdersScreen({
             {metaText}
           </Text>
 
-          {/* Строка 3: время создания | сколько висит + статус */}
+          {/* Строка 3: предзаказ → дата/время выдачи; иначе создан | сколько висит */}
           <View style={styles.rowBottom}>
-            <View style={styles.timeChip}>
-              <Clock size={13} color={COLORS.primary} strokeWidth={2.2} />
-              <Text style={styles.timeCreated}>{created}</Text>
-              {elapsed ? <Text style={styles.timeDivider}>|</Text> : null}
-              {elapsed ? <Text style={styles.timeElapsed}>{elapsed}</Text> : null}
-            </View>
+            {isPreorder ? (
+              <View style={styles.preorderChip}>
+                <CalendarClock size={13} color="#6366F1" strokeWidth={2.2} />
+                <Text style={styles.preorderChipText}>{scheduledLabel}</Text>
+              </View>
+            ) : (
+              <View style={styles.timeChip}>
+                <Clock size={13} color={COLORS.primary} strokeWidth={2.2} />
+                <Text style={styles.timeCreated}>{created}</Text>
+                {elapsed ? <Text style={styles.timeDivider}>|</Text> : null}
+                {elapsed ? <Text style={styles.timeElapsed}>{elapsed}</Text> : null}
+              </View>
+            )}
 
             {!isCompleted && (
               <View style={[styles.statusPill, { backgroundColor: meta.bg, borderColor: meta.border }]}>
@@ -245,24 +274,36 @@ export default function MyOrdersScreen({
 
             {completed.length > 0 && (
               <View style={[styles.section, styles.sectionCompleted]}>
-                <View style={styles.sectionHeader}>
-                  <Text style={[styles.sectionTitle, styles.sectionTitleCompleted]}>
-                    {t('myOrders.completed')}
-                  </Text>
+                <PressableScale
+                  style={styles.sectionHeader}
+                  onPress={() => setCompletedOpen((v) => !v)}
+                >
+                  <View style={styles.completedHeaderLeft}>
+                    {completedOpen ? (
+                      <ChevronDown size={18} color={COLORS.muted} strokeWidth={2.2} />
+                    ) : (
+                      <ChevronRight size={18} color={COLORS.muted} strokeWidth={2.2} />
+                    )}
+                    <Text style={[styles.sectionTitle, styles.sectionTitleCompleted]}>
+                      {t('myOrders.completed')}
+                    </Text>
+                  </View>
                   <View style={[styles.badge, styles.badgeCompleted]}>
                     <Text style={[styles.badgeText, styles.badgeTextCompleted]}>
                       {completed.length}
                     </Text>
                   </View>
-                </View>
+                </PressableScale>
 
-                <View style={styles.cardsList}>
-                  {completed.map((item, idx) => (
-                    <View key={`completed-${item.id}-${idx}`}>
-                      {renderOrderItem({ item, index: idx, isCompleted: true })}
-                    </View>
-                  ))}
-                </View>
+                {completedOpen && (
+                  <View style={styles.cardsList}>
+                    {completed.map((item, idx) => (
+                      <View key={`completed-${item.id}-${idx}`}>
+                        {renderOrderItem({ item, index: idx, isCompleted: true })}
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
           </>
@@ -378,6 +419,12 @@ const makeStyles = (COLORS) => StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 4,
     marginBottom: 10,
+  },
+
+  completedHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
 
   sectionTitle: {
@@ -517,6 +564,25 @@ const makeStyles = (COLORS) => StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.warning,
+  },
+
+  // Чип предзаказа: индиго-акцент, дата+время выдачи
+  preorderChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(99, 102, 241, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.30)',
+    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+
+  preorderChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6366F1',
   },
 
   statusPill: {
